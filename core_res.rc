@@ -1,0 +1,7 @@
+// core_res.rc — вшивает GITHUBCLOAD_core.exe (движок с Python и библиотеками)
+// в GITHUBCLOAD_GUI.exe как RCDATA (id 1), чтобы GUI был одним файлом.
+// Сборка: windres core_res.rc -O coff -o core_res.o  (и линковка с GCB_GUI.cpp)
+1 RCDATA "GITHUBCLOAD_core.exe"
+
+// Иконка программы (сгенерирована через jankrouter /v1/images/generations)
+1 ICON "app.ico"

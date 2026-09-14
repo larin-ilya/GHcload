@@ -1,0 +1,36 @@
+# --- Секреты (НИКОГДА в git/релиз) ---
+tokengh.txt
+PBEpass.txt
+
+# --- Артефакты сборки движка (PyInstaller) ---
+build/
+build_gui/
+dist/
+*.spec
+GITHUBCLOAD_core.exe
+
+# --- Промежуточные файлы сборки GUI ---
+core_res.o
+GITHUBCLOAD_GUI.exe
+
+# --- Linux-окружения GUI ---
+.venv-linux/
+
+# --- Временные логи ---
+gcb_debug.log
+*.log
+
+# --- Системное ---
+Thumbs.db
+Desktop.ini
+__pycache__/
+*.pyc
+
+# --- Релизные архивы (собираются отдельно, не держим в git) ---
+*.zip
+*.rar
+# --- Токены для заливки/ключи (НИКОГДА в git) ---
+ghp*.txt
+*.token
+*_token*.txt
+
