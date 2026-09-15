@@ -5,6 +5,11 @@
 принимает один файл до ~8 МБ) и заливается в **приватные репозитории GitHub**
 с помощью вашего токена.
 
+> ⚠️ **Перед использованием прочитайте [LEGAL.md](LEGAL.md)** — правовые предупреждения и
+> правила допустимого использования. Коротко: за содержимое ваших репозиториев, за сохранность
+> пароля и за соблюдение правил GitHub отвечаете вы; проект не связан с GitHub, Inc.;
+> программа поставляется «как есть», без гарантий.
+
 ---
 
 ## Скачать готовые сборки
@@ -14,8 +19,8 @@
 | Пакет | Что внутри | Что нужно на машине |
 |---|---|---|
 | `GITHUBCLOAD_v1.1.0_windows_x86.zip` | `GITHUBCLOAD_GUI.exe` — GUI + движок в одном файле | ничего; только ваши `tokengh.txt` и `PBEpass.txt` рядом |
-| `GITHUBCLOAD_GUI-linux-x64` | единый Linux-бинарник — GUI + движок | `chmod +x GITHUBCLOAD_GUI-linux-x64`; Python/tkinter вшиты |
-| `GITHUBCLOAD_v1.1.0_python.zip` | движок + tkinter-GUI + requirements | Python 3.8+, `pip install -r requirements.txt` (для GUI ещё `python3-tk`) |
+| `GITHUBCLOAD_GUI-linux-x64` | единый Linux-бинарник — GUI + движок + иконка | `chmod +x GITHUBCLOAD_GUI-linux-x64`; Python/tkinter вшиты |
+| `GITHUBCLOAD_v1.1.0_python.zip` | движок + tkinter-GUI + иконка + правовые тексты + requirements | Python 3.8+, `pip install -r requirements.txt` (для GUI ещё `python3-tk`) |
 
 Все версии собираются из исходников этого репозитория — инструкции ниже.
 
@@ -28,13 +33,17 @@ GHcload/
 ├── GITHUBCLOAD_GUI.py        — кроссплатформенный GUI на tkinter (Linux-first)
 ├── GCB_GUI.cpp               — исходник нативного Windows-GUI (Win32 + GDI+, неоморфизм)
 ├── core_res.rc               — ресурсы Windows-GUI (вшивание движка, иконка)
-├── app.ico                   — иконка приложения
+├── app.ico                   — иконка приложения (Windows-сборка, 16…256 px)
+├── app.png                   — та же иконка в PNG 256×256 (окно Linux-GUI, внутрь сборки)
+├── GITHUBCLOAD_GUI.desktop   — пункт в меню Linux (freedesktop, Icon=app)
 ├── build_gui.bat             — сборка Windows-GUI (MinGW)
 ├── build_single.bat          — сборка единого GITHUBCLOAD_GUI.exe (PyInstaller + MinGW)
 ├── build_gui_linux.sh        — сборка единого dist/GITHUBCLOAD_GUI (PyInstaller)
 ├── build_linux_docker.sh     — воспроизводимая сборка Linux-версии в Docker
 ├── run_gui_linux.sh          — запуск Linux-GUI из исходников (создаёт venv)
 ├── requirements.txt          — зависимости движка (py7zr, PyGithub)
+├── LICENSE                   — GNU AGPL-3.0-or-later
+├── LEGAL.md                  — правовые предупреждения и допустимое использование
 ├── screenshots/              — скриншоты интерфейса (Windows и Linux)
 ├── CHANGELOG.md
 └── README.md
@@ -197,6 +206,46 @@ bash build_linux_docker.sh
 xvfb-run -a dist/GITHUBCLOAD_GUI --smoke     # headless-проверка артефакта
 ```
 
+### Иконка приложения
+
+Иконка окна — `app.png` (PNG, 256×256) рядом с `GITHUBCLOAD_GUI.py`. Это **стабильный
+артефакт проекта**: файл лежит в репозитории, а не генерируется при каждой сборке
+(получен из `app.ico` через Pillow — в `app.ico` максимальный размер ровно 256×256).
+
+`build_gui_linux.sh` кладёт иконки внутрь сборки, поэтому GUI ищет PNG в двух местах
+по порядку: сначала в распакованной сборке (`sys._MEIPASS`), затем в папке приложения
+(`app_dir()`). Проверить, что иконка реально внутри единого файла:
+
+```bash
+xvfb-run -a dist/GITHUBCLOAD_GUI --smoke
+# [smoke] иконка: /tmp/_MEIxxxxxx/app.png
+```
+
+Иконки нет — программа работает со значком по умолчанию (ошибка иконки запуск не
+ломает), а сборка выдаёт понятное предупреждение. `app.ico` остаётся иконкой
+Windows-сборки; в команде PyInstaller он передаётся и как `--icon app.ico`, и как
+`--add-data "app.ico:."` (на Linux `--icon` игнорируется, но команда корректна и для
+других платформ). Без `app.ico` сборка останавливается с ошибкой.
+
+### Пункт в меню Linux
+
+В репозитории лежит `GITHUBCLOAD_GUI.desktop` (freedesktop-интеграция):
+`Type=Application`, `Name=GITHUBCLOAD`, `Exec=GITHUBCLOAD_GUI %U`, `Icon=app`,
+`Terminal=false`, `Categories=Utility;FileTools;`.
+
+```bash
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons
+cp dist/GITHUBCLOAD_GUI ~/.local/bin/
+cp app.png ~/.local/share/icons/                        # Icon=app ищет app.png здесь
+cp GITHUBCLOAD_GUI.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
+```
+
+`Icon=app` — имя без пути: система ищет `app.png` в `~/.local/share/icons`,
+`/usr/share/icons` и подобных каталогах. Если держите файл рядом с `.desktop`,
+укажите путь явно (`Icon=/полный/путь/app.png`). `tokengh.txt` и `PBEpass.txt`
+кладутся рядом с самим бинарником (то есть в `~/.local/bin` при установке выше).
+
 ### Где должны лежать токен и пароль
 
 GUI ищет `tokengh.txt` и `PBEpass.txt` в «папке приложения» — по тем же правилам,
@@ -223,7 +272,14 @@ chmod 600 dist/tokengh.txt dist/PBEpass.txt
 открывает без конвертаций, и наоборот — достаточно одинакового `PBEpass.txt`.
 
 Служебные флаги GUI: `--version` (версия и код 0), `--smoke` (headless-проверка,
-код 0), `--help`.
+код 0), `--accept-terms` (принять условия без диалога), `--help`.
+
+При каждом запуске GUI (кроме `--version` и `--help`) в консоль (stderr) и в журнал
+выводится одна короткая строка правового предупреждения:
+
+```
+GITHUBCLOAD 1.1.0 · GNU AGPL-3.0-or-later · поставляется «как есть»; полные правовые предупреждения — LEGAL.md, лицензия — LICENSE
+```
 
 ---
 
@@ -398,6 +454,37 @@ photos/
 
 ---
 
+## Лицензия и правовые предупреждения
+
+* **Лицензия:** [GNU AGPL-3.0-or-later](LICENSE). Программу можно свободно использовать,
+  изучать и изменять; при распространении или предоставлении доступа по сети производная работа
+  должна оставаться под той же лицензией с открытым исходным кодом (AGPL §13). Закрытое
+  (проприетарное) использование — только по отдельному письменному разрешению автора.
+* **Никаких гарантий:** программа поставляется «как есть». Автор не отвечает за утрату данных,
+  утечку токена, ограничения аккаунта GitHub и иные последствия использования.
+* **Пароль шифрования не восстанавливается:** `PBEpass.txt` нигде не хранится. Потеряли пароль —
+  данные потеряны безвозвратно.
+* **Метаданные не шифруются:** в служебном манифесте репозитория открытым текстом хранится имя
+  загруженного файла/папки, его размер и список частей архива. Шифрование защищает содержимое,
+  но не факт, объём и структуру хранения.
+* **Правила GitHub:** не используйте репозитории как хранилище или бэкап общего назначения — это
+  оговорено в [Acceptable Use Policies](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies)
+  (§9 Excessive Bandwidth Use) и в справке
+  [About large files on GitHub](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)
+  («Git is not designed to serve as a backup tool»; рекомендуется держать репозиторий меньше 1 ГБ).
+* **Запрещено:** нелегальный контент, вредоносное ПО, чужие данные и персональные данные третьих
+  лиц без законного основания, спам и атаки, обход санкций и экспортного контроля.
+* **Не аффилировано с GitHub, Inc.**; поддержка — по возможности, без SLA.
+
+При первом запуске GUI показывает экран подтверждения условий (сохраняется в `_gcb_terms.json` рядом с программой):
+
+![Подтверждение условий в Linux](screenshots/linux_terms_preview.png)
+
+Полный текст предупреждений, разбор рисков и обязанностей — в файле [LEGAL.md](LEGAL.md).
+Та же краткая строка (лицензия, «как есть», ссылки на документы) печатается при запуске
+GUI в консоль и в журнал — см. раздел [«Графический интерфейс в Linux»](#графический-интерфейс-в-linux).
+
+---
 ## Частые вопросы / ограничения
 
 | Ситуация | Поведение |

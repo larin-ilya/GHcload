@@ -34,3 +34,4 @@ ghp*.txt
 *.token
 *_token*.txt
 
+_gcb_terms.json

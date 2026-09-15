@@ -3,6 +3,10 @@
 """
 GITHUBCLOAD_GUI.py — графический интерфейс для движка GITHUBCLOAD.py.
 
+SPDX-License-Identifier: AGPL-3.0-or-later
+Copyright (C) 2026 larin-ilya
+Лицензия — LICENSE, правовые предупреждения — LEGAL.md.
+
 Кросс-платформенный (Linux-first), только стандартная библиотека (tkinter).
 Набор возможностей повторяет Windows-версию (GCB_GUI.cpp):
   * «Хранилища»    — список хранилищ; двойной клик открывает содержимое
@@ -18,17 +22,31 @@ main([...]) в рабочем потоке, перехватывая sys.stdout/
 сабпроцессом (в собранном onefile-виде файла рядом нет, ошибка будет понятной).
 
 Служебные флаги:
-  --version   печатает версию GUI и завершает работу с кодом 0;
-  --smoke     строит окно и все три страницы, обновляет layout, закрывает окно
-              и завершает работу с кодом 0 (headless-проверка под Xvfb);
-  --help      краткая справка.
+  --version       печатает версию GUI и завершает работу с кодом 0;
+  --smoke         строит окно и все три страницы, обновляет layout, закрывает окно
+                  и завершает работу с кодом 0 (headless-проверка под Xvfb);
+  --accept-terms  принимает условия использования без диалога (пишет _gcb_terms.json
+                  рядом с программой) и продолжает обычный запуск;
+  --help          краткая справка.
+
+При первом запуске (пока рядом нет _gcb_terms.json нужной версии условий) показывается
+модальное окно подтверждения условий использования. Отказ или закрытие окна завершают
+программу с кодом 3, ничего не изменяя. Флаги --smoke, --version, --help и --accept-terms
+окно не показывают — это нужно для headless-проверок.
+
+Иконка окна берётся из app.png (256x256): сначала из распакованной сборки
+(sys._MEIPASS), затем из папки приложения. Нет файла — работаем со значком по
+умолчанию, запуск не ломается. При каждом запуске (кроме --version и --help) в stderr
+и в журнал выводится одна короткая строка правового предупреждения.
 
 Примеры:
   python3 GITHUBCLOAD_GUI.py
   xvfb-run -a python3 GITHUBCLOAD_GUI.py --smoke
 """
 
+import datetime
 import importlib.util
+import json
 import os
 import queue
 import re
@@ -37,11 +55,31 @@ import subprocess
 import sys
 import threading
 import traceback
+import webbrowser
 
 GUI_NAME = "GITHUBCLOAD_GUI"
 GUI_VERSION = "1.1.0"
 ENGINE_MODULE = "GITHUBCLOAD"
 ENGINE_SCRIPT = "GITHUBCLOAD.py"
+
+# --- подтверждение условий использования и правовые документы ---------------
+TERMS_VERSION = "1.0"                     # версия условий; менять вместе с LEGAL.md
+TERMS_FILE = "_gcb_terms.json"            # файл состояния (создаётся в папке приложения)
+LEGAL_FILE = "LEGAL.md"                   # правовые предупреждения
+LICENSE_FILE = "LICENSE"                  # текст лицензии AGPL-3.0-or-later
+ICON_FILE = "app.png"                     # иконка окна (PNG 256x256; в сборке — внутри _MEIPASS)
+# Адрес проекта — запасной источник документов, когда файлов рядом с программой
+# нет (например, у собранного onefile-бинарника).
+PROJECT_URL = "https://github.com/larin-ilya/GITHUBCLOAD"
+
+# Одна короткая строка правового предупреждения: печатается при запуске в консоль
+# (stderr) и в журнал GUI — ровно один раз, а не при каждой операции.
+# Формулировка согласована с разделом «Правовая информация» в --help и с LEGAL.md.
+NOTICE_TEXT = (
+    "GITHUBCLOAD %s · GNU AGPL-3.0-or-later · поставляется «как есть»; "
+    "полные правовые предупреждения — %s, лицензия — %s"
+    % (GUI_VERSION, LEGAL_FILE, LICENSE_FILE)
+)
 
 # --------------------------------------------------------------------------
 # tkinter может отсутствовать (например, python3 без пакета python3-tk).
@@ -98,13 +136,77 @@ SELFTEST_INFO = (
 USAGE = """GITHUBCLOAD_GUI %s — графический интерфейс для GITHUBCLOAD.py
 
 Запуск:            python3 GITHUBCLOAD_GUI.py
-Служебные флаги:   --version   версия GUI (код 0)
-                   --smoke     headless-проверка окна и страниц (код 0)
-                   --help      эта справка
+Служебные флаги:   --version       версия GUI (код 0)
+                   --smoke         headless-проверка окна и страниц (код 0)
+                   --accept-terms  принять условия использования без диалога
+                                   (создаёт %s рядом с программой) и продолжить запуск
+                   --help          эта справка
+
+При первом запуске один раз на папку приложения показывается окно подтверждения
+условий использования; согласие сохраняется в %s. Удалите этот файл, чтобы увидеть
+окно снова. Флаги --version, --smoke и --accept-terms окно не показывают.
+
+Правовая информация: лицензия GNU AGPL-3.0-or-later, программа поставляется
+«как есть», без гарантий. Та же строка печатается при запуске — в консоль (stderr)
+и в журнал GUI:
+  %s
+
+Раздел «Правовая информация» есть и на странице «Самопроверка». Полные тексты —
+%s (предупреждения и допустимое использование) и %s (лицензия) рядом с программой,
+в репозитории проекта %s и в релизе.
 
 Рядом с GUI (или рядом с собранным файлом dist/GITHUBCLOAD_GUI) должны лежать
 tokengh.txt (токен GitHub) и PBEpass.txt (пароль шифрования).
-""" % GUI_VERSION
+""" % (GUI_VERSION, TERMS_FILE, TERMS_FILE, NOTICE_TEXT, LEGAL_FILE, LICENSE_FILE,
+       PROJECT_URL)
+
+# Краткий юридический текст для окна подтверждения условий (clickwrap).
+# Полные тексты — LEGAL.md и LICENSE; здесь только то, что важно знать до запуска.
+TERMS_TEXT = """GITHUBCLOAD хранит зашифрованные файлы в ВАШИХ собственных репозиториях GitHub.
+Программа бесплатна и поставляется «как есть». До запуска прочитайте:
+1. Никаких гарантий («as is»): явных или подразумеваемых гарантий нет, включая
+   пригодность для конкретной цели и сохранность данных. Используете — на свой риск.
+2. Риск утраты данных — на вас: автор не отвечает за потерю или повреждение файлов,
+   утечку токена, а также за ограничения и удаление ваших репозиториев на GitHub.
+3. Пароль шифрования не восстанавливается: мастер-ключа и «кода восстановления» нет.
+   Потеря PBEpass.txt = необратимая потеря данных; резервные копии — ваша задача.
+4. Метаданные не шифруются: имя файла/папки, размер и список частей архива лежат
+   открытым текстом в _gcb_manifest.json внутри репозитория. Учитывайте это.
+5. Правила GitHub соблюдать обязательно: репозитории — не хранилище и не бэкап
+   общего назначения, обходить лимиты нельзя — аккаунт и репозитории ограничат.
+6. Запрещены нелегальные материалы (в том числе с участием несовершеннолетних),
+   вредоносный код, спам и фишинг, чужие данные и персональные данные третьих лиц
+   без законного основания. Шифрование не делает такую обработку законной.
+7. Ответственность — на пользователе: только вы отвечаете за то, что и куда
+   загружаете, за сохранность токена и пароля и за соблюдение законов своей
+   юрисдикции (включая экспортный контроль).
+8. Проект не связан с GitHub, Inc., не спонсируется и не поддерживается им;
+   «GitHub» — торговая марка GitHub, Inc.
+9. Лицензия — GNU AGPL-3.0-or-later (файл LICENSE). Полные правовые предупреждения
+   и правила допустимого использования — в файле LEGAL.md.
+
+Нажимая «Принимаю условия», вы подтверждаете, что прочитали и принимаете их.
+"""
+
+# Краткая справка для окна «Правовая информация» в интерфейсе.
+LEGAL_BRIEF = (
+    "GITHUBCLOAD — свободное ПО под лицензией GNU AGPL-3.0-or-later.\n"
+    "Проект не аффилирован с GitHub, Inc. и не поддерживается GitHub.\n\n"
+    "Коротко о рисках и обязанностях:\n"
+    "  • Программа поставляется «как есть», без гарантий; утрата данных, утечка токена\n"
+    "    и ограничения аккаунта GitHub — риск пользователя.\n"
+    "  • Пароль шифрования не восстанавливается: потеря PBEpass.txt = потеря данных.\n"
+    "  • Метаданные не шифруются: имя файла/папки, размер и список частей архива\n"
+    "    хранятся открытым текстом в служебном файле _gcb_manifest.json.\n"
+    "  • Правила GitHub обязательны: репозитории — не хранилище и не бэкап общего\n"
+    "    назначения, лимиты обходить нельзя.\n"
+    "  • Запрещены нелегальный контент, вредоносное ПО, чужие данные и персональные\n"
+    "    данные третьих лиц без законного основания.\n"
+    "  • За загружаемые данные и соблюдение законов отвечает пользователь.\n\n"
+    "Полный текст правовых предупреждений — в файле LEGAL.md, текст лицензии —\n"
+    "в файле LICENSE. Оба документа есть рядом с программой, в репозитории проекта\n"
+    "и в составе релиза."
+)
 
 # Пример вывода движка — используется только в режиме --smoke, чтобы проверить
 # разбор и отрисовку без обращения к сети. Формат — как у GITHUBCLOAD.py.
@@ -135,6 +237,181 @@ def app_dir():
     if getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
+
+
+# --------------------------------------------------------------------------
+# Иконка приложения (PNG). В собранном onefile-виде app.png лежит внутри
+# распакованной сборки (sys._MEIPASS), при запуске из исходников — рядом с GUI.
+# Отсутствие иконки не должно ломать запуск, поэтому все ошибки глотаются.
+# --------------------------------------------------------------------------
+def icon_candidates():
+    """Каталоги поиска иконки: распакованная сборка (_MEIPASS) → папка приложения."""
+    dirs = []
+    meipass = getattr(sys, "_MEIPASS", None)          # есть только у сборки PyInstaller
+    if meipass:
+        dirs.append(meipass)
+    dirs.append(app_dir())
+    unique = []
+    for directory in dirs:
+        if directory and directory not in unique:
+            unique.append(directory)
+    return unique
+
+
+def find_icon():
+    """Путь к PNG-иконке приложения или None, если файла нет ни в одном каталоге."""
+    for directory in icon_candidates():
+        path = os.path.join(directory, ICON_FILE)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def apply_window_icon(window):
+    """
+    Ставит окну PNG-иконку и возвращает путь к ней (или None, если иконки нет
+    либо Tk её не принял). iconphoto(True, image) делает её иконкой по умолчанию
+    для всех окон приложения, включая диалоги.
+
+    Вызывать только после создания Tk(): до этого объекта окна ещё нет.
+    Ошибка или отсутствие файла не должны мешать запуску — всё в try/except.
+    """
+    try:
+        path = find_icon()
+        if not path:
+            return None
+        image = tk.PhotoImage(file=path)
+        window.iconphoto(True, image)
+    except Exception:                                     # noqa: BLE001
+        return None
+    # Ссылку на изображение держим в атрибуте окна: иначе сборщик мусора уничтожит
+    # объект PhotoImage и иконка исчезнет.
+    window._gcb_icon_image = image
+    return path
+
+
+# --------------------------------------------------------------------------
+# Подтверждение условий использования (clickwrap): состояние — в _gcb_terms.json
+# рядом с программой. Файла нет, он битый или версия условий другая — условия
+# считаются непринятыми. Ошибку чтения не считаем ошибкой программы.
+# --------------------------------------------------------------------------
+def terms_path():
+    """Путь к файлу состояния подтверждения условий (в папке приложения)."""
+    return os.path.join(app_dir(), TERMS_FILE)
+
+
+def terms_state():
+    """Возвращает (приняты: bool, данные: dict) для текущей версии условий."""
+    try:
+        with open(terms_path(), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:                                 # нет файла / битый JSON / нет прав
+        return False, {}
+    if not isinstance(data, dict):
+        return False, {}
+    return (str(data.get("terms_version") or "") == TERMS_VERSION), data
+
+
+def terms_accepted():
+    """True — условия актуальной версии уже приняты в этой папке приложения."""
+    return terms_state()[0]
+
+
+def write_terms_acceptance():
+    """
+    Атомарно записывает подтверждение условий (JSON: terms_version + accepted_at
+    в формате ISO-8601 UTC). Возвращает (успех: bool, текст_ошибки: str).
+    Недоступность записи не фатальна: вызывающий код предупреждает и продолжает.
+    """
+    stamp = (datetime.datetime.now(datetime.timezone.utc)
+             .replace(microsecond=0).isoformat())
+    payload = {"terms_version": TERMS_VERSION, "accepted_at": stamp}
+    path = terms_path()
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)                         # атомарная подмена файла
+        return True, ""
+    except Exception as exc:                          # noqa: BLE001
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False, "%s: %s" % (type(exc).__name__, exc)
+
+
+# --------------------------------------------------------------------------
+# Правовые документы (LEGAL.md / LICENSE): сначала файл рядом с программой,
+# затем — страница файла в репозитории проекта.
+# --------------------------------------------------------------------------
+def document_path(filename):
+    """Путь к документу рядом с программой или None, если файла нет."""
+    candidates = (app_dir(), os.path.dirname(os.path.abspath(__file__)))
+    for directory in candidates:
+        if not directory:
+            continue
+        path = os.path.join(directory, filename)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def document_url(filename):
+    """Ссылка на документ в репозитории проекта (ветка main)."""
+    return "%s/blob/main/%s" % (PROJECT_URL.rstrip("/"), filename)
+
+
+def open_local_path(path):
+    """Открывает файл приложением по умолчанию (Windows / macOS / Linux)."""
+    if sys.platform.startswith("win"):
+        os.startfile(path)                            # noqa: S606 — только Windows
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def open_document(filename):
+    """
+    Открывает LEGAL.md / LICENSE: сначала локальный файл рядом с программой,
+    при недоступности — ссылку в репозитории проекта.
+    Возвращает ("local"|"url"|"none", путь_или_ссылка).
+    """
+    path = document_path(filename)
+    if path:
+        try:
+            open_local_path(path)
+            return "local", path
+        except Exception:                             # noqa: BLE001 — переходим к ссылке
+            pass
+    url = document_url(filename)
+    try:
+        if webbrowser.open(url):
+            return "url", url
+    except Exception:                                 # noqa: BLE001
+        pass
+    return "none", url
+
+
+def write_stderr(text):
+    """
+    Пишет строку в stderr, если поток доступен. У GUI-сборки stderr может быть
+    подавлен или отсутствовать (sys.stderr is None) — это не ошибка программы,
+    поэтому пишем молча и никогда не падаем.
+    """
+    stream = getattr(sys, "stderr", None)
+    if stream is None:
+        return
+    try:
+        stream.write(text + "\n")
+        stream.flush()
+    except Exception:                                 # noqa: BLE001
+        pass
 
 
 def find_python():
@@ -518,6 +795,137 @@ class EngineRunner(object):
 
 
 # --------------------------------------------------------------------------
+# Подтверждение условий при первом запуске
+# --------------------------------------------------------------------------
+def show_terms_dialog(parent=None):
+    """
+    Модальное окно подтверждения условий использования (clickwrap) с прокручиваемым
+    кратким юридическим текстом и кнопками «Принимаю условия» / «Выход».
+
+    Возвращает True, если пользователь принял условия. Отказ, закрытие окна или Esc
+    дают False — в этом случае запуск прекращается, ничего не записывается.
+    Если parent не задан, создаётся собственное окно (до появления главного).
+    """
+    own_root = parent is None
+    window = tk.Tk() if own_root else tk.Toplevel(parent)
+    result = {"accepted": False}
+
+    font_h = pick_font(window, ("DejaVu Sans", "Noto Sans", "Liberation Sans",
+                                "Segoe UI", "Helvetica"), 13, "bold")
+    font_base = pick_font(window, ("DejaVu Sans", "Noto Sans", "Liberation Sans",
+                                   "Segoe UI", "Helvetica"), 10)
+    font_small = pick_font(window, ("DejaVu Sans", "Noto Sans", "Liberation Sans",
+                                    "Segoe UI", "Helvetica"), 9)
+
+    def close():
+        try:
+            window.grab_release()
+        except Exception:
+            pass
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    def accept():
+        result["accepted"] = True
+        close()
+
+    def decline():
+        result["accepted"] = False
+        close()
+
+    try:
+        window.title("GITHUBCLOAD — условия использования")
+        window.minsize(560, 420)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+        if not own_root:
+            window.transient(parent)
+        try:
+            window.configure(bg=C_BG)
+        except Exception:
+            pass
+
+        header = tk.Frame(window, bg=C_PANEL)
+        header.grid(row=0, column=0, sticky="ew")
+        tk.Label(header, text="Подтверждение условий использования", bg=C_PANEL,
+                 fg=C_TEXT, font=font_h).pack(anchor="w", padx=18, pady=(14, 0))
+        tk.Label(header, text="Версия условий %s · текст прокручивается" % TERMS_VERSION,
+                 bg=C_PANEL, fg=C_MUTED, font=font_small).pack(anchor="w", padx=18,
+                                                               pady=(2, 12))
+        tk.Frame(header, bg=C_BORDER, height=1).pack(fill="x")
+
+        body = tk.Frame(window, bg=C_BG, padx=16, pady=12)
+        body.grid(row=1, column=0, sticky="nsew")
+        body.rowconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1)
+        text = tk.Text(body, wrap="word", bg=C_PANEL, fg=C_TEXT, relief="flat", bd=0,
+                       highlightthickness=0, font=font_base, padx=12, pady=10,
+                       height=16, spacing1=2, spacing3=2)
+        bar = ttk.Scrollbar(body, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=bar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        bar.grid(row=0, column=1, sticky="ns")
+        text.insert("1.0", TERMS_TEXT)
+        text.configure(state="disabled")
+        text.yview_moveto(0)
+
+        footer = tk.Frame(window, bg=C_PANEL)
+        footer.grid(row=2, column=0, sticky="ew")
+        tk.Frame(footer, bg=C_BORDER, height=1).pack(fill="x")
+        row = tk.Frame(footer, bg=C_PANEL)
+        row.pack(fill="x", padx=16, pady=12)
+        tk.Label(row, text="«Выход» или закрытие окна — программа завершит работу,\n"
+                           "ничего не изменяя.",
+                 bg=C_PANEL, fg=C_MUTED, font=font_small,
+                 justify="left").pack(side="left")
+        btn_decline = ttk.Button(row, text="Выход", command=decline)
+        btn_decline.pack(side="right")
+        btn_accept = ttk.Button(row, text="Принимаю условия", command=accept)
+        btn_accept.pack(side="right", padx=(0, 8))
+
+        window.protocol("WM_DELETE_WINDOW", decline)
+        window.bind("<Escape>", lambda event: decline())
+
+        try:
+            window.update_idletasks()
+            width, height = 820, 600
+            left = max(0, (window.winfo_screenwidth() - width) // 2)
+            top = max(0, (window.winfo_screenheight() - height) // 3)
+            window.geometry("%dx%d+%d+%d" % (width, height, left, top))
+        except Exception:
+            window.geometry("820x600")
+        try:
+            window.lift()
+        except Exception:
+            pass
+        try:
+            window.grab_set()
+        except Exception:
+            pass
+        try:
+            btn_accept.focus_set()
+        except Exception:
+            pass
+
+        if own_root:
+            window.mainloop()
+        else:
+            window.wait_window()
+    except Exception:                                 # noqa: BLE001
+        traceback.print_exc()
+        result["accepted"] = False
+    finally:
+        if own_root:
+            try:
+                window.destroy()
+            except Exception:
+                pass
+    return result["accepted"]
+
+
+# --------------------------------------------------------------------------
 # Прокручиваемая область (для списка элементов хранилища).
 # Определение под if — чтобы модуль импортировался (например, для --version)
 # даже там, где tkinter не установлен.
@@ -578,7 +986,7 @@ class GcbApp(object):
     PAGE_UPLOAD = "Загрузка"
     PAGE_SELFTEST = "Самопроверка"
 
-    def __init__(self, root, smoke=False):
+    def __init__(self, root, smoke=False, startup_warnings=None):
         self.root = root
         self.smoke = smoke
         self.base_dir = app_dir()
@@ -596,6 +1004,7 @@ class GcbApp(object):
         self.current_page = None
         self.diag_label = None
         self.engine_label = None
+        self.legal_window = None
 
         self.runner = EngineRunner(self.base_dir)
 
@@ -607,9 +1016,20 @@ class GcbApp(object):
         except Exception:
             pass
 
+        # Иконка окна из app.png (в сборке — из _MEIPASS). Нет файла или Tk не принял
+        # изображение — работаем дальше со значком по умолчанию: это не ошибка.
+        try:
+            self.icon_path = apply_window_icon(self.root)
+        except Exception:                             # noqa: BLE001
+            self.icon_path = None
+
         self._build_styles()
         self._build_layout()
         self.show_page(self.PAGE_STORAGES)
+        # Одно короткое правовое предупреждение — один раз за запуск, в начале журнала.
+        self.log(NOTICE_TEXT)
+        for line in (startup_warnings or []):
+            self.log(line, tag="warn")
         self._refresh_engine_info()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(60, self._poll)
@@ -936,11 +1356,127 @@ class GcbApp(object):
 
         diag = ttk.Frame(page, style="Panel.TFrame", padding=14)
         diag.pack(fill="x", pady=(12, 0))
-        ttk.Label(diag, text="Диагностика", style="PanelH2.TLabel").pack(anchor="w")
+        diag_head = ttk.Frame(diag, style="Panel.TFrame")
+        diag_head.pack(fill="x")
+        ttk.Label(diag_head, text="Диагностика", style="PanelH2.TLabel").pack(side="left")
+        self.btn_legal = ttk.Button(diag_head, text="Правовая информация",
+                                    command=self.open_legal_window)
+        self.btn_legal.pack(side="right")
+        self._register_busy(self.btn_legal)
         self.diag_label = tk.Label(diag, text="", bg=C_PANEL, fg=C_MUTED,
                                    font=self.font_small, justify="left", anchor="w")
         self.diag_label.pack(fill="x", pady=(6, 0))
         return page
+
+    # -------------------------------------------------- правовая информация
+    def open_legal_window(self):
+        """Окно «Правовая информация»: краткая справка и кнопки LEGAL.md / LICENSE."""
+        existing = self.legal_window
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except Exception:
+                pass
+
+        window = tk.Toplevel(self.root)
+        self.legal_window = window
+        window.title("Правовая информация — GITHUBCLOAD")
+        window.geometry("780x580")
+        window.minsize(540, 400)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(1, weight=1)
+        try:
+            window.transient(self.root)
+        except Exception:
+            pass
+
+        header = tk.Frame(window, bg=C_PANEL)
+        header.grid(row=0, column=0, sticky="ew")
+        tk.Label(header, text="Правовая информация", bg=C_PANEL, fg=C_TEXT,
+                 font=self.font_h2).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(header, text="Версия условий %s · лицензия GNU AGPL-3.0-or-later"
+                 % TERMS_VERSION,
+                 bg=C_PANEL, fg=C_MUTED, font=self.font_small).pack(anchor="w", padx=16,
+                                                                   pady=(2, 10))
+        tk.Frame(header, bg=C_BORDER, height=1).pack(fill="x")
+
+        body = tk.Frame(window, bg=C_BG, padx=14, pady=12)
+        body.grid(row=1, column=0, sticky="nsew")
+        body.rowconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1)
+        text = tk.Text(body, wrap="word", bg=C_PANEL, fg=C_TEXT, relief="flat", bd=0,
+                       highlightthickness=0, font=self.font_base, padx=12, pady=10,
+                       spacing1=2, spacing3=2)
+        bar = ttk.Scrollbar(body, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=bar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        bar.grid(row=0, column=1, sticky="ns")
+        text.insert("1.0", LEGAL_BRIEF)
+        text.configure(state="disabled")
+        text.yview_moveto(0)
+
+        # Если документов рядом с программой нет (частая ситуация у сборки
+        # dist/GITHUBCLOAD_GUI) — говорим об этом прямо и уводим в репозиторий.
+        present = [name for name in (LEGAL_FILE, LICENSE_FILE) if document_path(name)]
+        missing = [name for name in (LEGAL_FILE, LICENSE_FILE) if name not in present]
+        if not missing:
+            hint = "Файлы %s найдены рядом с программой." % ", ".join(present)
+        elif present:
+            hint = ("Рядом с программой есть %s; файлов %s нет — кнопки откроют их "
+                    "в репозитории проекта." % (", ".join(present), ", ".join(missing)))
+        else:
+            hint = ("Файлов %s рядом с программой нет (так бывает у собранного файла) — "
+                    "кнопки откроют документы в репозитории проекта. Полные тексты "
+                    "входят в состав релиза и в репозиторий." % " и ".join((LEGAL_FILE,
+                                                                          LICENSE_FILE)))
+        tk.Label(window, text=hint, bg=C_BG, fg=C_MUTED, font=self.font_small,
+                 justify="left", anchor="w", wraplength=720).grid(row=2, column=0,
+                                                                  sticky="ew",
+                                                                  padx=16, pady=(0, 6))
+
+        footer = tk.Frame(window, bg=C_PANEL)
+        footer.grid(row=3, column=0, sticky="ew")
+        tk.Frame(footer, bg=C_BORDER, height=1).pack(fill="x")
+        row = tk.Frame(footer, bg=C_PANEL)
+        row.pack(fill="x", padx=16, pady=12)
+
+        def open_doc(name):
+            how, target = open_document(name)
+            if how == "local":
+                self.log("Правовая информация: открыт файл %s" % target)
+                return
+            if how == "url":
+                self.log("Правовая информация: открыт %s в репозитории проекта" % target)
+                return
+            self._append_log("ВНИМАНИЕ: не удалось открыть %s — ссылка: %s"
+                             % (name, target), "warn")
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(target)
+                note = "Ссылка скопирована в буфер обмена."
+            except Exception:
+                note = "Скопируйте ссылку вручную."
+            messagebox.showinfo("Правовая информация",
+                                "Не удалось открыть %s автоматически.\n%s\n\n%s"
+                                % (name, note, target), parent=window)
+
+        ttk.Button(row, text="Открыть %s" % LEGAL_FILE,
+                   command=lambda: open_doc(LEGAL_FILE)).pack(side="left")
+        ttk.Button(row, text="Открыть %s" % LICENSE_FILE,
+                   command=lambda: open_doc(LICENSE_FILE)).pack(side="left", padx=(8, 0))
+        ttk.Button(row, text="Закрыть", command=self._close_legal_window).pack(side="right")
+        window.protocol("WM_DELETE_WINDOW", self._close_legal_window)
+        window.bind("<Escape>", lambda event: self._close_legal_window())
+
+    def _close_legal_window(self):
+        try:
+            self.legal_window.destroy()
+        except Exception:
+            pass
+        self.legal_window = None
 
     # --------------------------------------------------------------- журнал
     @staticmethod
@@ -1127,8 +1663,13 @@ class GcbApp(object):
             except Exception:
                 pass
         if self.diag_label is not None:
+            accepted, terms = terms_state()
+            accepted_text = "да" if accepted else "нет"
+            if accepted and terms.get("accepted_at"):
+                accepted_text += " (%s)" % terms["accepted_at"]
             lines = [
                 "Папка приложения: %s" % self.base_dir,
+                "Условия приняты: %s · версия условий %s" % (accepted_text, TERMS_VERSION),
                 "Движок GITHUBCLOAD.py: %s" % self.runner.description,
                 "tokengh.txt: %s · PBEpass.txt: %s"
                 % ("найден" if token else "НЕ найден",
@@ -1520,6 +2061,8 @@ def smoke_run(root, app):
     root.update_idletasks()
     root.update()
     print("[smoke] окно создано: %s" % root.winfo_geometry())
+    print("[smoke] иконка: %s" % (app.icon_path
+                                  or "не найдена — используется значок по умолчанию"))
     for name in (app.PAGE_STORAGES, app.PAGE_UPLOAD, app.PAGE_SELFTEST):
         app.show_page(name)
         root.update_idletasks()
@@ -1553,11 +2096,33 @@ def main(argv=None):
         return 0
 
     smoke = "--smoke" in args
-    unknown = [arg for arg in args if arg != "--smoke"]
+    accept_terms = "--accept-terms" in args
+    unknown = [arg for arg in args if arg not in ("--smoke", "--accept-terms")]
     if unknown:
         sys.stderr.write("Неизвестные аргументы: %s\n(смотрите --help)\n"
                          % " ".join(unknown))
         return 2
+
+    # Правовое предупреждение — одна короткая строка в stderr, один раз за запуск.
+    # stdout не трогаем: вывод --smoke и --version должен оставаться машинно-читаемым.
+    write_stderr(NOTICE_TEXT)
+
+    startup_warnings = []
+
+    def record_terms_error(error):
+        """Ошибка записи не фатальна: предупреждаем в журнале и продолжаем."""
+        message = ("не удалось записать %s (%s) — условия подтверждены только "
+                   "на этот запуск" % (terms_path(), error))
+        startup_warnings.append("ВНИМАНИЕ: " + message)
+        sys.stderr.write("ВНИМАНИЕ: %s\n" % message)
+
+    # Автоматизированное принятие условий: работает и без tkinter (--accept-terms).
+    if accept_terms:
+        ok, error = write_terms_acceptance()
+        if ok:
+            sys.stderr.write("Условия использования приняты: записан %s\n" % terms_path())
+        else:
+            record_terms_error(error)
 
     if tk is None:
         sys.stderr.write(
@@ -1568,6 +2133,18 @@ def main(argv=None):
             "  Arch:           sudo pacman -S tk\n" % (TK_ERROR,))
         return 2
 
+    # --- подтверждение условий: один раз на папку приложения ----------------
+    # --smoke (headless-проверка) и --accept-terms окно не показывают.
+    if not smoke and not accept_terms and not terms_accepted():
+        if not show_terms_dialog():
+            sys.stderr.write(
+                "Условия использования не приняты — работа прекращена, ничего не изменено.\n"
+                "Правовые предупреждения: %s, лицензия: %s.\n" % (LEGAL_FILE, LICENSE_FILE))
+            return 3
+        ok, error = write_terms_acceptance()
+        if not ok:
+            record_terms_error(error)
+
     try:
         root = tk.Tk()
     except Exception as exc:                          # noqa: BLE001
@@ -1577,7 +2154,7 @@ def main(argv=None):
         return 3
 
     try:
-        app = GcbApp(root, smoke=smoke)
+        app = GcbApp(root, smoke=smoke, startup_warnings=startup_warnings)
         if smoke:
             return smoke_run(root, app)
         root.mainloop()

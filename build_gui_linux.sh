@@ -7,6 +7,8 @@
 # py7zr, multivolumefile и PyGithub — готовый файл запускается без Python.
 # tokengh.txt / PBEpass.txt в сборку НЕ попадают: их кладут рядом с
 # dist/GITHUBCLOAD_GUI (движок ищет их рядом с исполняемым файлом).
+# Иконки app.png (окно) и app.ico кладутся внутрь сборки: GUI читает PNG из
+# распакованного _MEIPASS. Для меню Linux рядом лежит GITHUBCLOAD_GUI.desktop.
 #
 # Скрипт сам создаёт/использует venv (GCB_VENV, по умолчанию .venv-linux)
 # и ставит туда py7zr, PyGithub и pyinstaller.
@@ -15,6 +17,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 info() { printf '[INFO] %s\n' "$*"; }
+warn() { printf '[ВНИМАНИЕ] %s\n' "$*" >&2; }
 err()  { printf '[ОШИБКА] %s\n' "$*" >&2; }
 
 # --- python3 -----------------------------------------------------------------
@@ -63,6 +66,27 @@ if [ ! -f GITHUBCLOAD_GUI.py ]; then
   exit 1
 fi
 
+# --- иконка --------------------------------------------------------------------
+# app.ico задаёт иконку самой сборки (на Linux PyInstaller его игнорирует, но
+# команда остаётся корректной и для других платформ), app.png — иконка окна:
+# GUI читает её из распакованной сборки (_MEIPASS), поэтому файл кладём внутрь.
+# Пути к файлам-данным — абсолютные: относительные PyInstaller ищет рядом со
+# .spec-файлом (--specpath build_gui), а не в корне проекта.
+if [ ! -f app.ico ]; then
+  err "рядом со скриптом нет app.ico — нечем задать иконку сборки (--icon app.ico)."
+  err "Восстановите app.ico из репозитория проекта и повторите сборку."
+  exit 1
+fi
+PROJECT_DIR="$(pwd)"
+ICON_ARGS=(--icon "$PROJECT_DIR/app.ico"
+           --add-data "$PROJECT_DIR/app.ico:.")
+if [ -f app.png ]; then
+  ICON_ARGS+=(--add-data "$PROJECT_DIR/app.png:.")
+else
+  warn "нет app.png — иконка окна НЕ попадёт внутрь сборки, окно получит значок по умолчанию."
+  warn "Положите app.png (256x256, конвертация из app.ico) рядом со скриптом и пересоберите."
+fi
+
 info "PyInstaller: собираю dist/GITHUBCLOAD_GUI (--onefile, GUI)..."
 rm -f dist/GITHUBCLOAD_GUI
 "$PY" -m PyInstaller \
@@ -71,6 +95,7 @@ rm -f dist/GITHUBCLOAD_GUI
   --windowed \
   --name GITHUBCLOAD_GUI \
   --hidden-import GITHUBCLOAD \
+  "${ICON_ARGS[@]}" \
   --distpath dist \
   --workpath build_gui \
   --specpath build_gui \
@@ -88,3 +113,4 @@ command -v file >/dev/null 2>&1 && file dist/GITHUBCLOAD_GUI || true
 info "Положите рядом с бинарником tokengh.txt и PBEpass.txt — и запускайте:"
 info "  ./dist/GITHUBCLOAD_GUI"
 info "Headless-проверка: xvfb-run -a dist/GITHUBCLOAD_GUI --smoke"
+info "Меню Linux: GITHUBCLOAD_GUI.desktop + app.png (см. README, раздел про Linux)."

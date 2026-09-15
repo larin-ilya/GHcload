@@ -1,0 +1,32 @@
+[Desktop Entry]
+# Интеграция GITHUBCLOAD в меню Linux (freedesktop.org).
+#
+# Установка (пример):
+#   mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons
+#   cp dist/GITHUBCLOAD_GUI ~/.local/bin/          # сам бинарник
+#   cp app.png ~/.local/share/icons/               # иконка для Icon=app
+#   cp GITHUBCLOAD_GUI.desktop ~/.local/share/applications/
+#   update-desktop-database ~/.local/share/applications 2>/dev/null || true
+# Тогда в меню появится пункт «GITHUBCLOAD».
+#
+# Icon=app — имя без пути и без расширения: система ищет app.png в
+# ~/.local/share/icons, /usr/share/icons и т.п. Если положить app.png рядом с
+# самим .desktop-файлом (или указать абсолютный путь), укажите это явно:
+#   Icon=/полный/путь/app.png
+#
+# Exec — имя программы, если она лежит в PATH (~/.local/bin). Полный путь тоже
+# подходит: Exec=/home/пользователь/GITHUBCLOAD/GITHUBCLOAD_GUI %U
+#
+# tokengh.txt и PBEpass.txt должны лежать рядом с исполняемым файлом
+# (в ~/.local/bin при установке выше) — программа ищет их в своей папке.
+
+Type=Application
+Name=GITHUBCLOAD
+GenericName=Приватное облако на GitHub
+Comment=Хранит зашифрованные файлы (7z AES-256, части по 8 МБ) в ваших репозиториях GitHub
+Exec=GITHUBCLOAD_GUI %U
+Icon=app
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=github;backup;cloud;encryption;7z;хранилище;шифрование;
+StartupNotify=true
