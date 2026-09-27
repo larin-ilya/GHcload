@@ -39,7 +39,7 @@ using namespace Gdiplus;
 // (GITHUBCLOAD_GUI.py). Держать в согласии с TERMS_TEXT и LEGAL.md.
 // ---------------------------------------------------------------------------
 static const char* GUI_NAME      = "GITHUBCLOAD_GUI";
-static const char* GUI_VERSION   = "1.2.0";
+static const char* GUI_VERSION   = "1.2.1";
 static const char* TERMS_VERSION = "1.0";
 static const char* TERMS_FILE    = "_gcb_terms.json";
 static const char* LEGAL_FILE    = "LEGAL.md";
@@ -50,11 +50,11 @@ static const int   MAX_LOG_LINES = 5000;
 // Одна короткая строка правового предупреждения: печатается при запуске
 // (в консоль и в журнал) ровно один раз, а не при каждой операции.
 static const char* NOTICE_TEXT =
-    "GITHUBCLOAD 1.2.0 · GNU AGPL-3.0-or-later · поставляется «как есть»; "
+    "GITHUBCLOAD 1.2.1 · GNU AGPL-3.0-or-later · поставляется «как есть»; "
     "полные правовые предупреждения — LEGAL.md, лицензия — LICENSE";
 
 static const char* USAGE =
-    "GITHUBCLOAD_GUI 1.2.0 — графический интерфейс (Windows) для GITHUBCLOAD.py\n"
+    "GITHUBCLOAD_GUI 1.2.1 — графический интерфейс (Windows) для GITHUBCLOAD.py\n"
     "\n"
     "Запуск:            GITHUBCLOAD_GUI.exe\n"
     "Служебные флаги:   --version       версия GUI (код 0)\n"
@@ -191,7 +191,7 @@ static const COLORREF SH_DARK    = RGB(0x9F, 0xAD, 0xC6);
 static const COLORREF SH_LIGHT   = RGB(0xFF, 0xFF, 0xFF);
 static const COLORREF INNER      = RGB(0xF3, 0xF8, 0xFE);
 static const COLORREF TXT        = RGB(0x44, 0x50, 0x61);
-static const COLORREF TXT_MUTED  = RGB(0x86, 0x93, 0xA8);
+static const COLORREF TXT_MUTED  = RGB(0x5F, 0x6B, 0x7E);
 static const COLORREF ACCENT     = RGB(0x4E, 0x8A, 0xD8);
 static const COLORREF ACCENT_LT  = RGB(0x91, 0xB8, 0xEF);
 static const COLORREF LOG_BG     = RGB(0xD8, 0xE0, 0xEC);
@@ -199,7 +199,7 @@ static const wchar_t* g_bodyFont = L"Segoe UI";
 static const wchar_t* g_headFont = L"Segoe UI";
 static const wchar_t* FontPick(std::initializer_list<const wchar_t*> cand);
 static void InitFonts();
-static const float LOG_H = 136.0f;
+static const float LOG_H = 156.0f;
 
 static const float NAV_H = 46.0f;
 static const float SIDE_W = 246.0f;
@@ -519,12 +519,12 @@ static void UpdateLayout(int w, int h, const std::vector<std::string>& stores) {
         SetR(L.nav[i], nx, y, nx + nw, y + (int)NAV_H);
         y += (int)NAV_H + 14;
     }
-    SetR(L.statusCard, nx, h - 156, nx + nw, h - 40);
-    // строки статуса — компактно: подпись, затем 2 строки с равными интервалами
-    SetR(L.statusTok, L.statusCard.left + 18, L.statusCard.top + 42,
-         L.statusCard.right - 18, L.statusCard.top + 42 + 28);
+    // карточка статуса — по содержимому, низ выровнен с низом журнала
+    SetR(L.statusCard, nx, h - 130, nx + nw, h - 26);
+    SetR(L.statusTok, L.statusCard.left + 18, L.statusCard.top + 38,
+         L.statusCard.right - 18, L.statusCard.top + 38 + 26);
     SetR(L.statusPass, L.statusTok.left, L.statusTok.bottom + 8,
-         L.statusTok.right, L.statusTok.bottom + 36);
+         L.statusTok.right, L.statusTok.bottom + 8 + 26);
 
     int bodyL = sb + 30, bodyT = 24, bodyR = w - 28, bodyB = h - 26;
     SetR(L.headerTitle, bodyL, bodyT, bodyR, bodyT + 34);
@@ -536,7 +536,10 @@ static void UpdateLayout(int w, int h, const std::vector<std::string>& stores) {
     int bGap = 14;
     L.topCount = (g_open >= 0) ? 5 : 4;
     int bW = (int)((RW(L.content) - bGap * (L.topCount - 1)) / L.topCount);
-    if (bW > 170) bW = 170;
+    if (bW > 170) {   // ограничили ширину — растянем промежутки, чтобы ряд занял всю ширину
+        bW = 170;
+        if (L.topCount > 1) bGap = (int)((RW(L.content) - bW * L.topCount) / (L.topCount - 1));
+    }
     for (int i = 0; i < L.topCount; i++) {
         int x = L.content.left + i * (bW + bGap);
         SetR(L.topBtn[i], x, cy, x + bW, cy + 42);
@@ -562,30 +565,30 @@ static void UpdateLayout(int w, int h, const std::vector<std::string>& stores) {
     SetR(L.btnBrowseFile, L.pathField.right + 14, ftop, L.pathField.right + 14 + 144, ftop + 52);
     SetR(L.btnBrowseDir, L.btnBrowseFile.left, L.btnBrowseFile.top + 66,
          L.btnBrowseFile.right, L.btnBrowseFile.bottom + 66);
-    int sfTop = L.btnBrowseDir.bottom + 22;
+    // сведения о выбранном пути — отдельной строкой под колонкой кнопок
+    SetR(L.pathInfo, L.content.left, L.btnBrowseDir.bottom + 10,
+         L.content.right, L.btnBrowseDir.bottom + 34);
+    int sfTop = L.pathInfo.bottom + 18;
     SetR(L.storeField, L.content.left, sfTop, L.content.right, sfTop + 52);
     // кнопка «▾» для выпадающего списка хранилищ — правый край поля
     SetR(L.storeDrop, L.storeField.right - 54, sfTop, L.storeField.right - 14, sfTop + 52);
     int upW = 240, upX = L.content.left + (L.content.right - L.content.left - upW) / 2;
     SetR(L.btnUpload, upX, L.storeField.bottom + 34, upX + upW, L.storeField.bottom + 34 + 60);
-    // сведения о выбранном пути — под полем «Файл или папка»
-    SetR(L.pathInfo, L.pathField.left + 4, L.pathField.bottom + 8,
-         L.pathField.right, L.pathField.bottom + 32);
     // пояснение «что произойдёт» — ниже блока загрузки
-    SetR(L.uploadInfo, L.content.left, L.btnUpload.bottom + 22,
+    SetR(L.uploadInfo, L.content.left, L.btnUpload.bottom + 24,
          L.content.right, L.content.bottom);
 
     // --- страница «Самопроверка» ---
     int stTop = L.content.top + 4;
-    SetR(L.selftestInfo, L.content.left, stTop, L.content.right, stTop + 96);
-    SetR(L.btnSelftest, L.content.left, L.selftestInfo.bottom + 12,
-         L.content.left + 300, L.selftestInfo.bottom + 12 + 52);
-    int diagTop = L.btnSelftest.bottom + 20;
-    SetR(L.diagCard, L.content.left, diagTop, L.content.right, L.content.bottom);
-    SetR(L.btnLegal, L.diagCard.right - 220, L.diagCard.top + 12,
-         L.diagCard.right - 14, L.diagCard.top + 12 + 40);
-    SetR(L.diagText, L.diagCard.left + 18, L.diagCard.top + 60,
-         L.diagCard.right - 18, L.diagCard.bottom - 14);
+    SetR(L.selftestInfo, L.content.left, stTop, L.content.right, stTop + 140);
+    SetR(L.btnSelftest, L.content.left, L.selftestInfo.bottom + 14,
+         L.content.left + 280, L.selftestInfo.bottom + 14 + 52);
+    int diagTop = L.btnSelftest.bottom + 18;
+    SetR(L.diagCard, L.content.left, diagTop, L.content.right, diagTop + 188);
+    SetR(L.btnLegal, L.diagCard.right - 224, L.diagCard.top + 18,
+         L.diagCard.right - 24, L.diagCard.top + 18 + 40);
+    SetR(L.diagText, L.diagCard.left + 22, L.diagCard.top + 70,
+         L.diagCard.right - 22, L.diagCard.bottom - 16);
     SetR(L.selftestHint, L.btnSelftest.right + 20, L.btnSelftest.top,
          L.content.right, L.btnSelftest.bottom);
 
@@ -604,21 +607,21 @@ static void UpdatePlaceholders();   // fwd (поля/плейсхолдеры)
 static void RefreshLayout() {
     RECT cr; GetClientRect(g_hwnd, &cr);
     UpdateLayout(cr.right, cr.bottom, g_stores);
-    if (g_editPath) MoveWindow(g_editPath, L.pathField.left + 2, L.pathField.top + 2,
-                               L.pathField.right - L.pathField.left - 4,
-                               L.pathField.bottom - L.pathField.top - 4, TRUE);
-    if (g_editStore) MoveWindow(g_editStore, L.storeField.left + 2, L.storeField.top + 2,
-                                L.storeField.right - L.storeField.left - 66,
-                                L.storeField.bottom - L.storeField.top - 4, TRUE);
+    if (g_editPath) MoveWindow(g_editPath, L.pathField.left + 12, L.pathField.top + 8,
+                               L.pathField.right - L.pathField.left - 24,
+                               L.pathField.bottom - L.pathField.top - 16, TRUE);
+    if (g_editStore) MoveWindow(g_editStore, L.storeField.left + 12, L.storeField.top + 8,
+                                L.storeField.right - L.storeField.left - 76,
+                                L.storeField.bottom - L.storeField.top - 16, TRUE);
     // поля видны только на вкладке «Загрузка»
     ShowWindow(g_editPath, g_tab == 1 ? SW_SHOW : SW_HIDE);
     ShowWindow(g_editStore, g_tab == 1 ? SW_SHOW : SW_HIDE);
-    if (g_phPath) MoveWindow(g_phPath, L.pathField.left + 4, L.pathField.top + 2,
-                             L.pathField.right - L.pathField.left - 8,
-                             L.pathField.bottom - L.pathField.top - 4, TRUE);
-    if (g_phStore) MoveWindow(g_phStore, L.storeField.left + 4, L.storeField.top + 2,
-                              L.storeField.right - L.storeField.left - 66,
-                              L.storeField.bottom - L.storeField.top - 4, TRUE);
+    if (g_phPath) MoveWindow(g_phPath, L.pathField.left + 13, L.pathField.top + 8,
+                             L.pathField.right - L.pathField.left - 26,
+                             L.pathField.bottom - L.pathField.top - 16, TRUE);
+    if (g_phStore) MoveWindow(g_phStore, L.storeField.left + 13, L.storeField.top + 8,
+                              L.storeField.right - L.storeField.left - 78,
+                              L.storeField.bottom - L.storeField.top - 16, TRUE);
     UpdatePlaceholders();
 }
 
@@ -1268,7 +1271,7 @@ static COLORREF TagColor(const std::string& tag) {
     if (tag == "err")  return RGB(0xC0, 0x39, 0x2B);
     if (tag == "warn") return RGB(0x9A, 0x6B, 0x00);
     if (tag == "ok")   return RGB(0x1A, 0x9E, 0x4B);
-    if (tag == "gui")  return RGB(0x6B, 0x72, 0x80);
+    if (tag == "gui")  return RGB(0x4F, 0x58, 0x66);
     return TXT;
 }
 
@@ -2096,6 +2099,12 @@ static void DrawSidebar(Graphics& g) {
                                        : (HitBtn(g_mouse) == NAV_STORES + i ? N_HOVER : N_RAISED));
         if (g_tab == i) {
             DrawNeumorphCore(g, L.nav[i], 20.0f, N_INSET, INNER, 9.0f, false);
+            // акцентная полоса слева — активная вкладка читается однозначно
+            RECT bar = { L.nav[i].left + 5, L.nav[i].top + 10,
+                         L.nav[i].left + 8, L.nav[i].bottom - 10 };
+            GraphicsPath bp; RoundPath(bp, bar, 2);
+            SolidBrush bb(C(ACCENT));
+            g.FillPath(&bb, &bp);
             DrawTextC(g, navs[i], L.nav[i], 15.0f, ACCENT, true, 1, 1);
         } else {
             DrawNeumorphCore(g, L.nav[i], 20.0f, st, BG, 17.0f, true);
@@ -2113,9 +2122,9 @@ static void DrawSidebar(Graphics& g) {
     DrawTextC(g, "Статус подключения", { L.statusCard.left + 16, L.statusCard.top + 12, L.statusCard.right - 16, L.statusCard.top + 34 },
               12.5f, TXT_MUTED, true, 0, 0);
     DrawTextC(g, tok ? "Токен GitHub: OK" : "Токен GitHub: нет",
-              L.statusTok, 13.0f, tok ? RGB(0x3C, 0x9A, 0x6E) : RGB(0xC8, 0x6A, 0x5A), true, 0, 1);
+              L.statusTok, 13.0f, tok ? RGB(0x2E, 0x7D, 0x57) : RGB(0xB0, 0x3F, 0x33), true, 0, 1);
     DrawTextC(g, pass ? "Пароль: OK" : "Пароль: нет",
-              L.statusPass, 13.0f, pass ? RGB(0x3C, 0x9A, 0x6E) : RGB(0xC8, 0x6A, 0x5A), true, 0, 1);
+              L.statusPass, 13.0f, pass ? RGB(0x2E, 0x7D, 0x57) : RGB(0xB0, 0x3F, 0x33), true, 0, 1);
 }
 
 // Геометрия строк списка (используется и при отрисовке, и при кликах)
@@ -2251,7 +2260,8 @@ static void DrawStoreRows(Graphics& g) {    bool inside = (g_open >= 0);
     RECT thead = { L.content.left, L.btnRefresh.bottom + 4, L.content.right - 6, L.btnRefresh.bottom + 22 };
     if (!inside)
         DrawTextC(g, "Ваши хранилища — клик по строке открывает том", thead, 13.0f, TXT_MUTED, false, 0, 0);
-    // внутри хранилища подсказка уже в заголовке («клик…», или «отмечено файлов: N») — не дублируем
+    else if (!g_detailSummary.empty())
+        DrawTextC(g, g_detailSummary, thead, 12.5f, TXT_MUTED, false, 0, 0);
 
     RECT clipR = ListClip();
     if (clipR.bottom > clipR.top) {
@@ -2272,16 +2282,16 @@ static void DrawStoreRows(Graphics& g) {    bool inside = (g_open >= 0);
         if (g_listScroll > maxScroll) g_listScroll = maxScroll;
         if (g_listScroll < 0) g_listScroll = 0;
 
-        if (!g_detailSummary.empty()) {
-            RECT sr = { clipR.left, clipR.top + 2, clipR.right, clipR.top + 22 };
-            DrawTextC(g, g_detailSummary, sr, 12.5f, TXT_MUTED, false, 0, 0);
-        }
         for (size_t i = 0; i < g_drows.size(); i++) {
             RECT r = DetailRect((int)i);
             if (g_drows[i].kind == 0) {
-                // заголовок тома
-                DrawNeumorphCore(g, r, 10.0f, N_INSET, INNER, 7.0f, false);
-                RECT th = { r.left + 14, r.top, r.right - 14, r.bottom };
+                // заголовок тома — мягкая акцентная плашка
+                GraphicsPath vp; RoundPath(vp, r, 10.0f);
+                SolidBrush vb(C(RGB(0xE4, 0xEC, 0xFB)));
+                g.FillPath(&vb, &vp);
+                Pen vpen(C(RGB(0xC6, 0xDA, 0xF6)), 1.0f);
+                g.DrawPath(&vpen, &vp);
+                RECT th = { r.left + 16, r.top, r.right - 16, r.bottom };
                 std::string label = "ТОМ " + g_drows[i].repo;
                 if (!g_drows[i].used.empty())
                     label += "   (занято " + g_drows[i].used + " из ~" + g_drows[i].total + ")";
@@ -2388,22 +2398,39 @@ static void DrawConsole(Graphics& g) {
     auto measure = [&](const std::wstring& s) {
         RectF rr; g.MeasureString(s.c_str(), (INT)s.size(), &f, PointF(0, 0), &rr); return rr.Width;
     };
+    // перенос по словам; слишком длинное слово режется по символам
     std::vector<std::wstring> lines;
     std::vector<COLORREF> cols;
     for (size_t li = 0; li < g_logLines.size(); li++) {
         std::wstring all = Utf8ToWide(g_logLines[li].text);
         COLORREF col = TagColor(g_logLines[li].tag);
-        std::wstring acc;
-        for (size_t i = 0; i < all.size(); i++) {
-            std::wstring cand = acc + all[i];
-            if (measure(cand) > (REAL)cw && !acc.empty()) {
-                lines.push_back(acc);
-                cols.push_back(col);
-                acc.clear();
+        std::wstring cur;
+        size_t i = 0;
+        while (true) {
+            size_t sp = all.find(L' ', i);
+            bool last = (sp == std::wstring::npos);
+            std::wstring word = last ? all.substr(i) : all.substr(i, sp - i);
+            if (!word.empty()) {
+                std::wstring cand = cur.empty() ? word : cur + L" " + word;
+                if (measure(cand) <= (REAL)cw) {
+                    cur = cand;
+                } else {
+                    if (!cur.empty()) { lines.push_back(cur); cols.push_back(col); cur.clear(); }
+                    std::wstring w = word;
+                    while (measure(w) > (REAL)cw && w.size() > 1) {
+                        size_t k = w.size();
+                        while (k > 1 && measure(w.substr(0, k)) > (REAL)cw) k--;
+                        lines.push_back(w.substr(0, k));
+                        cols.push_back(col);
+                        w = w.substr(k);
+                    }
+                    cur = w;
+                }
             }
-            acc += all[i];
+            if (last) break;
+            i = sp + 1;
         }
-        lines.push_back(acc);
+        lines.push_back(cur);
         cols.push_back(col);
     }
 
@@ -2497,7 +2524,8 @@ static void DoPaint() {
             DrawFieldBox(g, L.pathField);
             DrawButton(g, L.btnBrowseFile, "Выбрать файл", BtnSt(ACT_BROWSE_FILE), false, false);
             DrawButton(g, L.btnBrowseDir, "Выбрать папку", BtnSt(ACT_BROWSE_DIR), false, false);
-            DrawTextC(g, g_pathInfo, L.pathInfo, 12.5f, g_pathInfoCol, false, 0, 1);
+            if (!g_pathInfo.empty() && g_pathInfo != "—")
+                DrawTextC(g, g_pathInfo, L.pathInfo, 12.5f, g_pathInfoCol, false, 0, 1);
 
             RECT lab2 = { L.storeField.left, L.storeField.top - 22, L.storeField.right - 60, L.storeField.top - 4 };
             DrawTextC(g, "Имя хранилища (репозиторий)", lab2, 12.5f, TXT_MUTED, true, 0, 0);
@@ -2507,15 +2535,15 @@ static void DoPaint() {
             DrawTextC(g, UPLOAD_INFO, L.uploadInfo, 12.0f, TXT_MUTED, false, 0, 0);
         } else {
             DrawNeumorphCore(g, L.selftestInfo, 14.0f, N_INSET, INNER, 7.0f, false);
-            RECT info = Shift(L.selftestInfo, 18, 10);
-            info.bottom -= 8;
+            RECT info = Shift(L.selftestInfo, 22, 16);
+            info.bottom -= 12;
             DrawTextC(g, SELFTEST_INFO, info, 12.5f, TXT_MUTED, false, 0, 0);
 
             DrawButton(g, L.btnSelftest, "Запустить самопроверку", BtnSt(ACT_SELFTEST_RUN), true, IsDisabled((BtnId)ACT_SELFTEST_RUN));
 
             DrawNeumorphCore(g, L.diagCard, 14.0f, N_INSET, INNER, 7.0f, false);
-            RECT dh = { L.diagCard.left + 18, L.diagCard.top + 14,
-                        L.diagCard.right - 240, L.diagCard.top + 44 };
+            RECT dh = { L.diagCard.left + 22, L.diagCard.top + 20,
+                        L.diagCard.right - 250, L.diagCard.top + 52 };
             DrawTextC(g, "Диагностика", dh, 13.5f, TXT, true, 0, 1);
             DrawButton(g, L.btnLegal, "Правовая информация", BtnSt(ACT_LEGAL), false, IsDisabled((BtnId)ACT_LEGAL));
             DrawTextC(g, DiagnosticsText(), L.diagText, 12.0f, TXT_MUTED, false, 0, 0);
