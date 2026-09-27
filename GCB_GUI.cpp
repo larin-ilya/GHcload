@@ -21,7 +21,10 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <cmath>
+#include <cctype>
+#include <ctime>
 #include <initializer_list>
 #include <memory>
 #include <string>
@@ -30,6 +33,105 @@
 #include <algorithm>
 
 using namespace Gdiplus;
+
+// ---------------------------------------------------------------------------
+// Идентификация продукта и правовые тексты — синхронно с Linux-GUI
+// (GITHUBCLOAD_GUI.py). Держать в согласии с TERMS_TEXT и LEGAL.md.
+// ---------------------------------------------------------------------------
+static const char* GUI_NAME      = "GITHUBCLOAD_GUI";
+static const char* GUI_VERSION   = "1.2.0";
+static const char* TERMS_VERSION = "1.0";
+static const char* TERMS_FILE    = "_gcb_terms.json";
+static const char* LEGAL_FILE    = "LEGAL.md";
+static const char* LICENSE_FILE  = "LICENSE";
+static const char* PROJECT_URL   = "https://github.com/larin-ilya/GITHUBCLOAD";
+static const int   MAX_LOG_LINES = 5000;
+
+// Одна короткая строка правового предупреждения: печатается при запуске
+// (в консоль и в журнал) ровно один раз, а не при каждой операции.
+static const char* NOTICE_TEXT =
+    "GITHUBCLOAD 1.2.0 · GNU AGPL-3.0-or-later · поставляется «как есть»; "
+    "полные правовые предупреждения — LEGAL.md, лицензия — LICENSE";
+
+static const char* USAGE =
+    "GITHUBCLOAD_GUI 1.2.0 — графический интерфейс (Windows) для GITHUBCLOAD.py\n"
+    "\n"
+    "Запуск:            GITHUBCLOAD_GUI.exe\n"
+    "Служебные флаги:   --version       версия GUI (код 0)\n"
+    "                   --smoke         сборка окна и всех страниц без показа (код 0)\n"
+    "                   --accept-terms  принять условия использования без диалога\n"
+    "                                   (создаёт _gcb_terms.json рядом с программой)\n"
+    "                   --help          эта справка\n"
+    "\n"
+    "При первом запуске один раз на папку приложения показывается окно подтверждения\n"
+    "условий; согласие сохраняется в _gcb_terms.json. Удалите этот файл, чтобы\n"
+    "увидеть окно снова. Флаги --version, --smoke и --accept-terms окно не показывают.\n"
+    "\n"
+    "Правовая информация: лицензия GNU AGPL-3.0-or-later, программа поставляется\n"
+    "«как есть», без гарантий. Полные тексты — LEGAL.md и LICENSE рядом с программой,\n"
+    "в репозитории проекта https://github.com/larin-ilya/GITHUBCLOAD и в релизе.\n";
+
+// Текст подтверждения условий (clickwrap) — копия TERMS_TEXT из Linux-GUI.
+static const char* TERMS_TEXT =
+    "GITHUBCLOAD хранит зашифрованные файлы в ВАШИХ собственных репозиториях GitHub.\n"
+    "Программа бесплатна и поставляется «как есть». До запуска прочитайте:\n"
+    "1. Никаких гарантий («as is»): явных или подразумеваемых гарантий нет, включая\n"
+    "   пригодность для конкретной цели и сохранность данных. Используете — на свой риск.\n"
+    "2. Риск утраты данных — на вас: автор не отвечает за потерю или повреждение файлов,\n"
+    "   утечку токена, а также за ограничения и удаление ваших репозиториев на GitHub.\n"
+    "3. Пароль шифрования не восстанавливается: мастер-ключа и «кода восстановления» нет.\n"
+    "   Потеря PBEpass.txt = необратимая потеря данных; резервные копии — ваша задача.\n"
+    "4. Метаданные не шифруются: имя файла/папки, размер и список частей архива лежат\n"
+    "   открытым текстом в _gcb_manifest.json внутри репозитория. Учитывайте это.\n"
+    "5. Правила GitHub соблюдать обязательно: репозитории — не хранилище и не бэкап\n"
+    "   общего назначения, обходить лимиты нельзя — аккаунт и репозитории ограничат.\n"
+    "6. Запрещены нелегальные материалы (в том числе с участием несовершеннолетних),\n"
+    "   вредоносный код, спам и фишинг, чужие данные и персональные данные третьих лиц\n"
+    "   без законного основания. Шифрование не делает такую обработку законной.\n"
+    "7. Ответственность — на пользователе: только вы отвечаете за то, что и куда\n"
+    "   загружаете, за сохранность токена и пароля и за соблюдение законов своей\n"
+    "   юрисдикции (включая экспортный контроль).\n"
+    "8. Проект не связан с GitHub, Inc., не спонсируется и не поддерживается им;\n"
+    "   «GitHub» — торговая марка GitHub, Inc.\n"
+    "9. Лицензия — GNU AGPL-3.0-or-later (файл LICENSE). Полные правовые предупреждения\n"
+    "   и правила допустимого использования — в файле LEGAL.md.\n"
+    "\n"
+    "Нажимая «Принимаю условия», вы подтверждаете, что прочитали и принимаете их.\n";
+
+// Краткая справка для окна «Правовая информация» — копия LEGAL_BRIEF из Linux-GUI.
+static const char* LEGAL_BRIEF =
+    "GITHUBCLOAD — свободное ПО под лицензией GNU AGPL-3.0-or-later.\n"
+    "Проект не аффилирован с GitHub, Inc. и не поддерживается GitHub.\n"
+    "\n"
+    "Коротко о рисках и обязанностях:\n"
+    "  • Программа поставляется «как есть», без гарантий; утрата данных, утечка токена\n"
+    "    и ограничения аккаунта GitHub — риск пользователя.\n"
+    "  • Пароль шифрования не восстанавливается: потеря PBEpass.txt = потеря данных.\n"
+    "  • Метаданные не шифруются: имя файла/папки, размер и список частей архива\n"
+    "    хранятся открытым текстом в служебном файле _gcb_manifest.json.\n"
+    "  • Правила GitHub обязательны: репозитории — не хранилище и не бэкап общего\n"
+    "    назначения, лимиты обходить нельзя.\n"
+    "  • Запрещены нелегальный контент, вредоносное ПО, чужие данные и персональные\n"
+    "    данные третьих лиц без законного основания.\n"
+    "  • За загружаемые данные и соблюдение законов отвечает пользователь.\n"
+    "\n"
+    "Полный текст правовых предупреждений — в файле LEGAL.md, текст лицензии —\n"
+    "в файле LICENSE. Оба документа есть рядом с программой, в репозитории проекта\n"
+    "и в составе релиза.";
+
+static const char* UPLOAD_INFO =
+    "Что произойдёт: файл/папка шифруются паролем из PBEpass.txt (7z, AES-256), "
+    "при размере больше 8 МБ архив автоматически режется на части по 8 МБ, "
+    "после чего части заливаются в приватный репозиторий-том GitHub по токену "
+    "из tokengh.txt.\n"
+    "Служебные файлы tokengh.txt и PBEpass.txt никогда не попадают в репозиторий, "
+    "даже если лежат внутри загружаемой папки.";
+
+static const char* SELFTEST_INFO =
+    "Самопроверка не обращается к GitHub: движок создаёт тестовые файлы, шифрует их "
+    "паролем, режет архив на части, склеивает обратно, расшифровывает, а затем "
+    "сверяет содержимое и проверяет, что tokengh.txt / PBEpass.txt в архив не попали.\n"
+    "При успехе в журнале появится строка «САМОПРОВЕРКА ПРОЙДЕНА УСПЕШНО» и код возврата 0.";
 
 // ---------------------------------------------------------------------------
 // Мини-утилиты
@@ -124,10 +226,15 @@ struct Layout {
     RECT statusCard, statusTok, statusPass;
     RECT headerTitle;
     RECT content, console;
-    RECT btnRefresh, btnDownload, btnDelete, btnWipe;
+    RECT topBtn[5];                     // верхний ряд: 4 кнопки в списке, 5 внутри хранилища
+    int  topCount = 4;
+    RECT btnRefresh, btnDownload, btnDelete, btnWipe;   // = topBtn[0..3] (совместимость)
     std::vector<RECT> storeRows;
-    RECT pathField, btnBrowseFile, btnBrowseDir, storeField, btnUpload, storeDrop;   // storeDrop — стрелочка «▾»
-    RECT btnSelftest, selftestHint;
+    RECT pathField, pathInfo, btnBrowseFile, btnBrowseDir, storeField, btnUpload, storeDrop;   // storeDrop — стрелочка «▾»
+    RECT uploadInfo;
+    RECT selftestInfo, btnSelftest, selftestHint;
+    RECT diagCard, diagText, btnLegal;
+    RECT logTitle, btnClearLog, chkAuto;
     int W = 1, H = 1;
 } L;
 
@@ -143,6 +250,31 @@ static int  g_downId = 0;
 static int  g_listScroll = 0, g_logScroll = 0;
 static std::string g_log;
 static bool g_running = false;
+
+// Журнал — список строк с тегами (cmd / err / warn / ok / gui), как в Linux-GUI.
+struct LogLine { std::string text; std::string tag; };
+static std::vector<LogLine> g_logLines;
+static bool        g_autoscroll = true;
+static std::string g_statusText = "Готово.";
+static COLORREF    g_statusColor = TXT_MUTED;
+
+// Сведения о выбранном пути (вкладка «Загрузка»).
+static std::string g_pathInfo = "—";
+static COLORREF    g_pathInfoCol = TXT_MUTED;
+static int         g_pathSeq = 0;
+
+// Диагностика и описание выбранного движка.
+static std::string g_engineDesc = "не определён";
+static std::string g_termsAcceptedAt;
+
+// Очередь удаления выбранных элементов (по одному id за команду).
+static std::vector<std::wstring> g_delQueue;
+static std::wstring g_delStore;
+
+static void LogAdd(const std::string& text, const std::string& tag = "");
+static void SetStatus(const std::string& text, COLORREF col);
+static std::string CommandLabel(const std::vector<std::wstring>& args);
+static void KickPathInfo();
 static std::vector<std::string> g_stores;
 static int g_sel = -1;
 static int g_open = -1;            // индекс открытого хранилища в g_stores; -1 = список хранилищ
@@ -164,11 +296,13 @@ enum BtnId {
     NAV_STORES = 1000, NAV_UPLOAD, NAV_SELFTEST,
     ACT_REFRESH = 2000, ACT_DOWNLOAD, ACT_DELETE, ACT_WIPE,
     ACT_BROWSE_FILE, ACT_BROWSE_DIR, ACT_UPLOAD, ACT_SELFTEST_RUN, ACT_STORE_DROP,
-    ACT_BACK = 2100, ACT_DL_SEL, ACT_DL_ONE, ACT_DL_ALL
+    ACT_BACK = 2100, ACT_DL_SEL, ACT_DL_ONE, ACT_DL_ALL,
+    ACT_DEL_SEL = 2200, ACT_LOG_CLEAR, ACT_AUTO_SCROLL, ACT_LEGAL
 };
 
-#define WM_APP_DONE    (WM_APP + 1)
-#define WM_APP_PROMPT  (WM_APP + 2)
+#define WM_APP_DONE     (WM_APP + 1)
+#define WM_APP_PROMPT   (WM_APP + 2)
+#define WM_APP_PATHINFO (WM_APP + 4)
 enum InBtn { IN_OK = 7001, IN_CANCEL = 7002 };
 #define IDC_IN_EDIT 7101
 
@@ -400,12 +534,18 @@ static void UpdateLayout(int w, int h, const std::vector<std::string>& stores) {
 
     int cy = L.content.top;
     int bGap = 14;
-    int bW = (RW(L.content) - bGap * 3) / 4;
+    L.topCount = (g_open >= 0) ? 5 : 4;
+    int bW = (int)((RW(L.content) - bGap * (L.topCount - 1)) / L.topCount);
     if (bW > 170) bW = 170;
-    SetR(L.btnRefresh, L.content.left, cy, L.content.left + bW, cy + 42);
-    SetR(L.btnDownload, L.btnRefresh.right + bGap, cy, L.btnRefresh.right + bGap + bW, cy + 42);
-    SetR(L.btnDelete, L.btnDownload.right + bGap, cy, L.btnDownload.right + bGap + bW, cy + 42);
-    SetR(L.btnWipe, L.btnDelete.right + bGap, cy, L.btnDelete.right + bGap + bW, cy + 42);
+    for (int i = 0; i < L.topCount; i++) {
+        int x = L.content.left + i * (bW + bGap);
+        SetR(L.topBtn[i], x, cy, x + bW, cy + 42);
+    }
+    for (int i = L.topCount; i < 5; i++) SetR(L.topBtn[i], 0, 0, 0, 0);
+    L.btnRefresh  = L.topBtn[0];
+    L.btnDownload = L.topBtn[1];
+    L.btnDelete   = L.topBtn[2];
+    L.btnWipe     = L.topBtn[3];
 
     int rowsTop = cy + 60;
     L.storeRows.clear();
@@ -428,12 +568,35 @@ static void UpdateLayout(int w, int h, const std::vector<std::string>& stores) {
     SetR(L.storeDrop, L.storeField.right - 54, sfTop, L.storeField.right - 14, sfTop + 52);
     int upW = 240, upX = L.content.left + (L.content.right - L.content.left - upW) / 2;
     SetR(L.btnUpload, upX, L.storeField.bottom + 34, upX + upW, L.storeField.bottom + 34 + 60);
+    // сведения о выбранном пути — под полем «Файл или папка»
+    SetR(L.pathInfo, L.pathField.left + 4, L.pathField.bottom + 8,
+         L.pathField.right, L.pathField.bottom + 32);
+    // пояснение «что произойдёт» — ниже блока загрузки
+    SetR(L.uploadInfo, L.content.left, L.btnUpload.bottom + 22,
+         L.content.right, L.content.bottom);
 
-    int half = (L.content.right - L.content.left) / 2;
-    SetR(L.btnSelftest, L.content.left, L.content.top + 8,
-         L.content.left + half - 24, L.content.top + 8 + 58);
-    SetR(L.selftestHint, L.btnSelftest.right + 26, L.content.top + 8,
+    // --- страница «Самопроверка» ---
+    int stTop = L.content.top + 4;
+    SetR(L.selftestInfo, L.content.left, stTop, L.content.right, stTop + 96);
+    SetR(L.btnSelftest, L.content.left, L.selftestInfo.bottom + 12,
+         L.content.left + 300, L.selftestInfo.bottom + 12 + 52);
+    int diagTop = L.btnSelftest.bottom + 20;
+    SetR(L.diagCard, L.content.left, diagTop, L.content.right, L.content.bottom);
+    SetR(L.btnLegal, L.diagCard.right - 220, L.diagCard.top + 12,
+         L.diagCard.right - 14, L.diagCard.top + 12 + 40);
+    SetR(L.diagText, L.diagCard.left + 18, L.diagCard.top + 60,
+         L.diagCard.right - 18, L.diagCard.bottom - 14);
+    SetR(L.selftestHint, L.btnSelftest.right + 20, L.btnSelftest.top,
          L.content.right, L.btnSelftest.bottom);
+
+    // --- заголовок журнала: «Автопрокрутка» и «Очистить» ---
+    int chW = 150, clW = 110, hh = 28;
+    SetR(L.btnClearLog, L.console.right - 20 - clW, L.console.top + 13,
+         L.console.right - 20, L.console.top + 13 + hh);
+    SetR(L.chkAuto, L.btnClearLog.left - 12 - chW, L.console.top + 13,
+         L.btnClearLog.left - 12, L.console.top + 13 + hh);
+    SetR(L.logTitle, L.console.left + 20, L.console.top + 10,
+         L.chkAuto.left - 350, L.console.top + 42);
 }
 
 static void UpdatePlaceholders();   // fwd (поля/плейсхолдеры)
@@ -464,9 +627,9 @@ static void RefreshLayout() {
 // ---------------------------------------------------------------------------
 // Кнопки верхнего ряда зависят от уровня: список хранилищ (g_open == -1)
 // либо файлы внутри хранилища (g_open >= 0).
-static BtnId TopBtnForSlot(int slot) {   // 0=btnRefresh 1=btnDownload 2=btnDelete 3=btnWipe
+static BtnId TopBtnForSlot(int slot) {   // раскладка зависит от уровня (список / внутри хранилища)
     if (g_open >= 0) {
-        static const BtnId in[4] = { ACT_BACK, ACT_DL_SEL, ACT_DL_ALL, ACT_REFRESH };
+        static const BtnId in[5] = { ACT_BACK, ACT_DL_SEL, ACT_DL_ALL, ACT_DEL_SEL, ACT_REFRESH };
         return in[slot];
     }
     static const BtnId out[4] = { ACT_REFRESH, ACT_DOWNLOAD, ACT_DELETE, ACT_WIPE };
@@ -480,9 +643,13 @@ static int CheckedCount() {
 }
 
 static bool IsDisabled(BtnId id) {
+    if (id == ACT_LOG_CLEAR || id == ACT_AUTO_SCROLL) return false;
+    if (id == ACT_LEGAL) return g_running;
     if (g_open >= 0) {   // уровень «внутри хранилища»
         switch (id) {
         case ACT_DL_SEL:
+            return g_running || CheckedCount() == 0;
+        case ACT_DEL_SEL:
             return g_running || CheckedCount() == 0;
         case ACT_DL_ALL:
             return g_running || g_items.empty();
@@ -515,11 +682,18 @@ static int HitBtn(POINT p) {
         if (PtIn(L.btnWipe, x, y)) return TopBtnForSlot(3);
         return B_NONE;
     }
-    if (PtIn(L.btnBrowseFile, x, y)) return ACT_BROWSE_FILE;
-    if (PtIn(L.btnBrowseDir, x, y)) return ACT_BROWSE_DIR;
-    if (PtIn(L.storeDrop, x, y)) return ACT_STORE_DROP;
-    if (PtIn(L.btnUpload, x, y)) return ACT_UPLOAD;
-    if (PtIn(L.btnSelftest, x, y)) return ACT_SELFTEST_RUN;
+    if (g_tab == 1) {
+        if (PtIn(L.btnBrowseFile, x, y)) return ACT_BROWSE_FILE;
+        if (PtIn(L.btnBrowseDir, x, y)) return ACT_BROWSE_DIR;
+        if (PtIn(L.storeDrop, x, y)) return ACT_STORE_DROP;
+        if (PtIn(L.btnUpload, x, y)) return ACT_UPLOAD;
+    }
+    if (g_tab == 2) {
+        if (PtIn(L.btnSelftest, x, y)) return ACT_SELFTEST_RUN;
+        if (PtIn(L.btnLegal, x, y)) return ACT_LEGAL;
+    }
+    if (PtIn(L.btnClearLog, x, y)) return ACT_LOG_CLEAR;
+    if (PtIn(L.chkAuto, x, y)) return ACT_AUTO_SCROLL;
     return B_NONE;
 }
 
@@ -538,7 +712,7 @@ static int HitStoreDropRow(POINT p) {
 // ---------------------------------------------------------------------------
 struct CmdJob { std::vector<std::wstring> args; int type; };
 
-static bool Launch(const std::wstring& cmdline, std::string& out) {
+static bool Launch(const std::wstring& cmdline, std::string& out, DWORD* exitCode = nullptr) {
     HANDLE hRead = nullptr, hWrite = nullptr;
     SECURITY_ATTRIBUTES sa{}; sa.nLength = sizeof sa; sa.bInheritHandle = TRUE;
     if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return false;
@@ -562,7 +736,10 @@ static bool Launch(const std::wstring& cmdline, std::string& out) {
     }
     CloseHandle(hRead);
     WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 0;
+    GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess);
+    if (exitCode) *exitCode = code;
     out = acc;
     return true;
 }
@@ -741,8 +918,9 @@ static DWORD WINAPI CmdThread(LPVOID p) {
         cmdLabel = eng;
     }
     std::string out;
+    DWORD exitCode = (DWORD)-1;
     if (!prefix.empty() && prefix != L"\"\"") {
-        Launch(prefix + argsSuffix, out);
+        Launch(prefix + argsSuffix, out, &exitCode);
         // Самолечение: антивирус или гонка распаковки могли дать «сбой импорта»
         // при ПЕРВОМ запуске извлечённого ядра. Перераспаковываем и пробуем ещё раз.
         bool importFail = out.find("НЕ УДАЛОСЬ ИМПОРТИРОВАТЬ") != std::string::npos
@@ -755,11 +933,12 @@ static DWORD WINAPI CmdThread(LPVOID p) {
                 g_engine = L"\"" + again + L"\"";
                 cmdLabel = g_engine;
                 DebugLog("RETRY", "повторный запуск извлечённого ядра");
-                Launch(g_engine + argsSuffix, out2);
+                Launch(g_engine + argsSuffix, out2, &exitCode);
                 if (!out2.empty()) out = out2;
             }
         }
     } else {
+        exitCode = 1;
         out = "НЕ НАЙДЕН ДВИЖОК GITHUBCLOAD.\n"
               "GUI ищет (по порядку):\n"
               "  1) GITHUBCLOAD_core.exe рядом с собой;\n"
@@ -770,6 +949,7 @@ static DWORD WINAPI CmdThread(LPVOID p) {
               "Затем перезапустите приложение.";
     }
     if (out.empty()) out = "Готово (пустой вывод).";
+    out += "\n[код возврата: " + std::to_string((long long)exitCode) + "]";
     DebugLog("CMD", u8str(cmdLabel + argsSuffix));
     DebugLog("OUT", out);
     PostMessageW(g_hwnd, WM_APP_DONE, (WPARAM)job->type, (LPARAM)new std::string(out));
@@ -779,7 +959,10 @@ static DWORD WINAPI CmdThread(LPVOID p) {
 static void RunCmd(std::vector<std::wstring> args, int type) {
     if (g_running) return;
     g_running = true;
-    g_log.clear(); g_logScroll = 0;
+    g_log.clear();
+    std::string label = CommandLabel(args);
+    LogAdd("$ GITHUBCLOAD " + label, "cmd");
+    SetStatus("Выполняется: " + label, ACCENT);
     CmdJob* job = new CmdJob{ std::move(args), type };
     CreateThread(nullptr, 0, CmdThread, job, 0, nullptr);
     Repaint();
@@ -1033,6 +1216,709 @@ static std::wstring InputDialog(HWND owner, const std::wstring& title,
 }
 
 // ---------------------------------------------------------------------------
+// Журнал, статус, разбор вывода
+// ---------------------------------------------------------------------------
+static bool StartsWith(const std::string& s, const char* prefix) {
+    size_t n = strlen(prefix);
+    return s.size() >= n && s.compare(0, n, prefix) == 0;
+}
+
+static std::string TrimCR(const std::string& s) {
+    size_t e = s.size();
+    while (e > 0 && (s[e - 1] == '\r' || s[e - 1] == '\n')) e--;
+    return s.substr(0, e);
+}
+
+static std::string TrimSpaces(const std::string& s) {
+    size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return "";
+    size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
+static std::string HumanBytes(unsigned long long n) {
+    const char* u[] = { "Б", "КБ", "МБ", "ГБ", "ТБ" };
+    double v = (double)n;
+    int i = 0;
+    while (v >= 1024.0 && i < 4) { v /= 1024.0; i++; }
+    char b[64];
+    if (i == 0) snprintf(b, sizeof b, "%llu %s", n, u[i]);
+    else        snprintf(b, sizeof b, "%.1f %s", v, u[i]);
+    return std::string(b);
+}
+
+// «12.5 МБ» -> байты (как parse_human в Linux-GUI)
+static unsigned long long ParseHuman(const std::string& s) {
+    size_t i = 0;
+    while (i < s.size() && ((s[i] >= '0' && s[i] <= '9') || s[i] == '.' || s[i] == ',')) i++;
+    if (i == 0) return 0;
+    std::string num = s.substr(0, i);
+    for (char& c : num) if (c == ',') c = '.';
+    double v = strtod(num.c_str(), nullptr);
+    std::string rest = s.substr(i);
+    if (rest.find("ТБ") != std::string::npos)      v *= 1024.0 * 1024.0 * 1024.0 * 1024.0;
+    else if (rest.find("ГБ") != std::string::npos) v *= 1024.0 * 1024.0 * 1024.0;
+    else if (rest.find("МБ") != std::string::npos) v *= 1024.0 * 1024.0;
+    else if (rest.find("КБ") != std::string::npos) v *= 1024.0;
+    return (unsigned long long)(v + 0.5);
+}
+
+static COLORREF TagColor(const std::string& tag) {
+    if (tag == "cmd")  return RGB(0x2F, 0x6F, 0xED);
+    if (tag == "err")  return RGB(0xC0, 0x39, 0x2B);
+    if (tag == "warn") return RGB(0x9A, 0x6B, 0x00);
+    if (tag == "ok")   return RGB(0x1A, 0x9E, 0x4B);
+    if (tag == "gui")  return RGB(0x6B, 0x72, 0x80);
+    return TXT;
+}
+
+static std::string ClassifyLine(const std::string& line) {
+    std::string t = TrimSpaces(line);
+    if (t.empty()) return "";
+    if (StartsWith(t, "ОШИБКА") || StartsWith(t, "ВНУТРЕННЯЯ ОШИБКА")) return "err";
+    if (StartsWith(t, "ВНИМАНИЕ")) return "warn";
+    if (t.find("САМОПРОВЕРКА ПРОЙДЕНА") != std::string::npos) return "ok";
+    if (StartsWith(t, "ГОТОВО")) return "ok";
+    return "";
+}
+
+static void LogAdd(const std::string& text, const std::string& tag) {
+    LogLine ln;
+    ln.text = text;
+    ln.tag = tag;
+    g_logLines.push_back(ln);
+    if ((int)g_logLines.size() > MAX_LOG_LINES)
+        g_logLines.erase(g_logLines.begin(), g_logLines.begin() + (g_logLines.size() - MAX_LOG_LINES));
+}
+
+// Разбивает блок вывода на строки и добавляет их в журнал.
+// forcedTag пуст — тег определяется классификацией каждой строки.
+static void LogAddBlock(const std::string& text, const std::string& forcedTag) {
+    std::string cur;
+    for (size_t i = 0; i <= text.size(); i++) {
+        if (i == text.size() || text[i] == '\n') {
+            std::string line = TrimCR(cur);
+            cur.clear();
+            LogAdd(line, forcedTag.empty() ? ClassifyLine(line) : forcedTag);
+        } else {
+            cur += text[i];
+        }
+    }
+}
+
+static void SetStatus(const std::string& text, COLORREF col) {
+    g_statusText = text;
+    g_statusColor = col;
+}
+
+static std::string CommandLabel(const std::vector<std::wstring>& args) {
+    std::string s;
+    for (size_t i = 0; i < args.size(); i++) {
+        if (i) s += " ";
+        s += u8str(args[i]);
+    }
+    return s;
+}
+
+// ---------------------------------------------------------------------------
+// Условия использования (_gcb_terms.json) — как в Linux-GUI
+// ---------------------------------------------------------------------------
+static bool FileExistsW(const std::wstring& p) {
+    DWORD a = GetFileAttributesW(p.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static std::string ReadTextFileW(const std::wstring& path) {
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f) return std::string();
+    std::string s;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) s.append(buf, n);
+    fclose(f);
+    return s;
+}
+
+static bool WriteTextFileAtomicW(const std::wstring& path, const std::string& data) {
+    std::wstring tmp = path + L".tmp";
+    FILE* f = _wfopen(tmp.c_str(), L"wb");
+    if (!f) return false;
+    bool ok = (fwrite(data.data(), 1, data.size(), f) == data.size());
+    fflush(f);
+    fclose(f);
+    if (!ok) { DeleteFileW(tmp.c_str()); return false; }
+    if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+static std::wstring TermsPath() { return ScriptDir() + L"\\" + wstr(TERMS_FILE); }
+
+static std::string JsonStringField(const std::string& json, const char* key) {
+    std::string k = std::string("\"") + key + "\"";
+    size_t p = json.find(k);
+    if (p == std::string::npos) return "";
+    p = json.find(':', p + k.size());
+    if (p == std::string::npos) return "";
+    size_t q1 = json.find('"', p);
+    if (q1 == std::string::npos) return "";
+    size_t q2 = json.find('"', q1 + 1);
+    if (q2 == std::string::npos) return "";
+    return json.substr(q1 + 1, q2 - q1 - 1);
+}
+
+static bool TermsAccepted(std::string* acceptedAt = nullptr) {
+    std::string j = ReadTextFileW(TermsPath());
+    if (j.empty()) return false;
+    if (JsonStringField(j, "terms_version") != TERMS_VERSION) return false;
+    if (acceptedAt) *acceptedAt = JsonStringField(j, "accepted_at");
+    return true;
+}
+
+static bool WriteTermsAcceptance(std::string& error) {
+    SYSTEMTIME st;
+    GetSystemTime(&st);
+    char stamp[64];
+    snprintf(stamp, sizeof stamp, "%04d-%02d-%02dT%02d:%02d:%02d+00:00",
+             st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    std::string payload = std::string("{\n  \"terms_version\": \"") + TERMS_VERSION +
+                          "\",\n  \"accepted_at\": \"" + stamp + "\"\n}\n";
+    if (!WriteTextFileAtomicW(TermsPath(), payload)) {
+        error = std::string("не удалось записать ") + TERMS_FILE;
+        return false;
+    }
+    g_termsAcceptedAt = stamp;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Правовые документы: локальный файл рядом с программой -> ссылка в репозитории
+// ---------------------------------------------------------------------------
+static std::wstring DocumentPathW(const char* filename) {
+    std::wstring p = ScriptDir() + L"\\" + wstr(filename);
+    return FileExistsW(p) ? p : std::wstring();
+}
+
+static bool OpenLocalPathW(const std::wstring& path) {
+    HINSTANCE r = ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    return (INT_PTR)r > 32;
+}
+
+static void OpenDocument(HWND owner, const char* filename) {
+    std::wstring local = DocumentPathW(filename);
+    if (!local.empty() && OpenLocalPathW(local)) {
+        LogAdd(std::string("Правовая информация: открыт файл ") + u8str(local), "gui");
+        return;
+    }
+    std::string urlS = std::string(PROJECT_URL) + "/blob/main/" + filename;
+    std::wstring url = wstr(urlS);
+    if (OpenLocalPathW(url)) {
+        LogAdd(std::string("Правовая информация: открыт ") + urlS +
+               " в репозитории проекта", "gui");
+        return;
+    }
+    LogAdd(std::string("ВНИМАНИЕ: не удалось открыть ") + filename + " — ссылка: " + urlS, "warn");
+    if (OpenClipboard(owner)) {
+        EmptyClipboard();
+        size_t n = (url.size() + 1) * sizeof(wchar_t);
+        HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, n);
+        if (h) {
+            void* d = GlobalLock(h);
+            if (d) {
+                memcpy(d, url.c_str(), n);
+                GlobalUnlock(h);
+                SetClipboardData(CF_UNICODETEXT, h);
+            }
+        }
+        CloseClipboard();
+    }
+    std::wstring msg = L"Не удалось открыть " + wstr(filename) +
+                       L" автоматически.\nСсылка скопирована в буфер обмена:\n" + url;
+    MessageBoxW(owner, msg.c_str(), L"Правовая информация", MB_OK | MB_ICONINFORMATION);
+}
+
+// ---------------------------------------------------------------------------
+// Модальное окно с прокручиваемым текстом (условия / правовая информация)
+// ---------------------------------------------------------------------------
+static std::wstring g_dlgTitle, g_dlgSub, g_dlgBody, g_dlgNote;
+static std::vector<std::wstring> g_dlgBtns;
+static std::vector<RECT> g_dlgBtnRects;
+static int  g_dlgHot = -1, g_dlgDown = -1, g_dlgResult = -1, g_dlgDefault = -1;
+static bool g_dlgDone = false;
+static HWND g_dlgEdit = nullptr;
+static HFONT g_dlgFont = nullptr, g_dlgTitleFont = nullptr;
+static HBRUSH g_dlgEditBrush = nullptr;
+static WNDPROC g_dlgEditOld = nullptr;
+static const wchar_t* g_dlgCls = L"gcb_dialog";
+
+static void DlgLayout(HWND hwnd) {
+    RECT cr;
+    GetClientRect(hwnd, &cr);
+    int pad = 18, btnH = 44, gap = 10;
+    int n = (int)g_dlgBtns.size();
+    if (n < 1) n = 0;
+    int bw = 190;
+    if (n > 0) {
+        int totalW = n * bw + (n - 1) * gap;
+        if (totalW > cr.right - 2 * pad) {
+            bw = (cr.right - 2 * pad - (n - 1) * gap) / n;
+            if (bw < 80) bw = 80;
+        }
+        int x = cr.right - pad - (n * bw + (n - 1) * gap);
+        if (x < pad) x = pad;
+        g_dlgBtnRects.assign(n, RECT{ 0, 0, 0, 0 });
+        for (int i = 0; i < n; i++) {
+            int y = cr.bottom - pad - btnH;
+            SetR(g_dlgBtnRects[i], x, y, x + bw, y + btnH);
+            x += bw + gap;
+        }
+    } else {
+        g_dlgBtnRects.clear();
+    }
+    int top = 84;
+    int noteH = g_dlgNote.empty() ? 0 : 40;
+    int editBottom = cr.bottom - pad - (n ? btnH + 14 : 0) - noteH;
+    if (g_dlgEdit)
+        MoveWindow(g_dlgEdit, pad, top, cr.right - 2 * pad, editBottom - top, TRUE);
+}
+
+static int DlgHit(POINT p) {
+    for (size_t i = 0; i < g_dlgBtnRects.size(); i++)
+        if (PtIn(g_dlgBtnRects[i], p.x, p.y)) return (int)i;
+    return -1;
+}
+
+static LRESULT CALLBACK DlgWndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+    case WM_CREATE: {
+        RECT cr;
+        GetClientRect(hwnd, &cr);
+        g_dlgEdit = CreateWindowExW(0, L"EDIT", g_dlgBody.c_str(),
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+            cr.left + 18, 84, cr.right - 36, cr.bottom - 220,
+            hwnd, (HMENU)9101, g_hInst, nullptr);
+        if (g_dlgFont) SendMessageW(g_dlgEdit, WM_SETFONT, (WPARAM)g_dlgFont, TRUE);
+        g_dlgDone = false; g_dlgResult = -1; g_dlgHot = -1; g_dlgDown = -1;
+        DlgLayout(hwnd);
+        break;
+    }
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = (HDC)w;
+        SetBkColor(dc, INNER);
+        SetTextColor(dc, TXT);
+        return (LRESULT)(g_dlgEditBrush ? g_dlgEditBrush : GetStockObject(WHITE_BRUSH));
+    }
+    case WM_SIZE: DlgLayout(hwnd); return 0;
+    case WM_GETMINMAXINFO:
+        ((MINMAXINFO*)l)->ptMinTrackSize.x = 560;
+        ((MINMAXINFO*)l)->ptMinTrackSize.y = 420;
+        return 0;
+    case WM_ERASEBKGND: return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT cr;
+        GetClientRect(hwnd, &cr);
+        HDC mdc = CreateCompatibleDC(dc);
+        HBITMAP bmp = CreateCompatibleBitmap(dc, cr.right, cr.bottom);
+        HGDIOBJ ob = SelectObject(mdc, bmp);
+        {
+            Graphics g(mdc);
+            g.SetSmoothingMode(SmoothingModeAntiAlias);
+            g.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+            LinearGradientBrush bg(PointF(0, 0), PointF((REAL)cr.right, (REAL)cr.bottom),
+                                   C(RGB(0xED, 0xF2, 0xFA)), C(RGB(0xDD, 0xE6, 0xF0)));
+            g.FillRectangle(&bg, 0, 0, cr.right, cr.bottom);
+            {
+                Font ft(g_headFont, 19.0f, FontStyleBold, UnitPixel);
+                SolidBrush btb(C(TXT));
+                DrawTextStr(g, g_dlgTitle, RECT{ 18, 18, cr.right - 18, 50 }, ft, btb, 0, 0);
+            }
+            {
+                Font fl(g_bodyFont, 12.5f, FontStyleRegular, UnitPixel);
+                SolidBrush blb(C(TXT_MUTED));
+                DrawTextStr(g, g_dlgSub, RECT{ 18, 52, cr.right - 18, 76 }, fl, blb, 0, 0);
+            }
+            if (!g_dlgNote.empty()) {
+                RECT nr;
+                int y = cr.bottom - 18 - (g_dlgBtns.empty() ? 0 : 58) - 40;
+                SetR(nr, 18, y, cr.right - 18, y + 40);
+                Font fn(g_bodyFont, 12.0f, FontStyleRegular, UnitPixel);
+                SolidBrush nb(C(TXT_MUTED));
+                DrawTextStr(g, g_dlgNote, nr, fn, nb, 0, 0);
+            }
+            for (size_t i = 0; i < g_dlgBtnRects.size(); i++) {
+                NState st = ((int)i == g_dlgDown && g_dlgDown == g_dlgHot) ? N_PRESSED
+                          : ((int)i == g_dlgHot ? N_HOVER : N_RAISED);
+                bool accent = ((int)i == g_dlgDefault);
+                DrawButton(g, g_dlgBtnRects[i], u8str(g_dlgBtns[i]), st, accent, false);
+            }
+            Pen pen(C(SH_DARK, 40), 1.0f);
+            GraphicsPath cpath;
+            RoundPath(cpath, RECT{ 2, 2, cr.right - 2, cr.bottom - 2 }, 12);
+            g.DrawPath(&pen, &cpath);
+        }
+        BitBlt(dc, 0, 0, cr.right, cr.bottom, mdc, 0, 0, SRCCOPY);
+        SelectObject(mdc, ob);
+        DeleteObject(bmp);
+        DeleteDC(mdc);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        POINT p{ GET_X_LPARAM(l), GET_Y_LPARAM(l) };
+        int h = DlgHit(p);
+        if (h != g_dlgHot) { g_dlgHot = h; InvalidateRect(hwnd, nullptr, TRUE); }
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        POINT p{ GET_X_LPARAM(l), GET_Y_LPARAM(l) };
+        g_dlgDown = DlgHit(p);
+        g_dlgHot = g_dlgDown;
+        InvalidateRect(hwnd, nullptr, TRUE);
+        return 0;
+    }
+    case WM_LBUTTONUP: {
+        POINT p{ GET_X_LPARAM(l), GET_Y_LPARAM(l) };
+        int h = DlgHit(p);
+        if (h >= 0 && h == g_dlgDown) { g_dlgResult = h; g_dlgDone = true; }
+        g_dlgDown = -1;
+        InvalidateRect(hwnd, nullptr, TRUE);
+        return 0;
+    }
+    case WM_CLOSE:
+        g_dlgResult = -1;
+        g_dlgDone = true;
+        return 0;
+    case WM_DESTROY:
+        g_dlgEdit = nullptr;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, m, w, l);
+}
+
+// Показывает модальное окно; возвращает индекс нажатой кнопки или -1 (закрытие/отказ).
+static int ShowDialogWindow(HWND owner, const std::wstring& title, const std::wstring& sub,
+                            const std::wstring& body, const std::wstring& note,
+                            const std::vector<std::wstring>& buttons, int defaultIndex) {
+    static bool reg = false;
+    if (!reg) {
+        WNDCLASSW wc{};
+        wc.lpfnWndProc = DlgWndProc;
+        wc.hInstance = g_hInst;
+        wc.hCursor = LoadCursorW(nullptr, (LPCWSTR)IDC_ARROW);
+        wc.hbrBackground = nullptr;
+        wc.lpszClassName = g_dlgCls;
+        RegisterClassW(&wc);
+        reg = true;
+    }
+    if (!g_dlgFont) {
+        g_dlgFont = CreateFontW(-16, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                                CLEARTYPE_QUALITY, 0, g_bodyFont);
+        g_dlgTitleFont = CreateFontW(-19, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                                     CLEARTYPE_QUALITY, 0, g_headFont);
+    }
+    if (!g_dlgEditBrush) g_dlgEditBrush = CreateSolidBrush(INNER);
+
+    g_dlgTitle = title; g_dlgSub = sub; g_dlgBody = body; g_dlgNote = note;
+    g_dlgBtns = buttons; g_dlgDefault = defaultIndex;
+    g_dlgResult = -1; g_dlgDone = false; g_dlgHot = -1; g_dlgDown = -1;
+
+    HWND hwnd = CreateWindowExW(0, g_dlgCls, title.c_str(),
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+        CW_USEDEFAULT, CW_USEDEFAULT, 860, 620, owner, nullptr, g_hInst, nullptr);
+    if (!hwnd) return -1;
+
+    RECT ow;
+    if (owner && GetWindowRect(owner, &ow)) {
+        RECT nr;
+        GetWindowRect(hwnd, &nr);
+        int ww = nr.right - nr.left, wh = nr.bottom - nr.top;
+        int px = ow.left + (ow.right - ow.left - ww) / 2;
+        int py = ow.top + (ow.bottom - ow.top - wh) / 3;
+        if (px < 0) px = 0;
+        if (py < 0) py = 0;
+        SetWindowPos(hwnd, nullptr, px, py, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    }
+    ShowWindow(hwnd, SW_SHOW);
+    UpdateWindow(hwnd);
+    if (owner) EnableWindow(owner, FALSE);
+
+    MSG msg;
+    while (!g_dlgDone) {
+        BOOL r = GetMessageW(&msg, nullptr, 0, 0);
+        if (r == 0) { g_dlgDone = true; break; }
+        if (r == -1) break;
+        if (!IsDialogMessageW(hwnd, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    if (owner) {
+        EnableWindow(owner, TRUE);
+        SetActiveWindow(owner);
+    }
+    DestroyWindow(hwnd);
+    return g_dlgResult;
+}
+
+static bool ShowTermsDialog(HWND owner) {
+    std::vector<std::wstring> btns;
+    btns.push_back(L"Выход");
+    btns.push_back(L"Принимаю условия");
+    std::wstring sub = std::wstring(L"Версия условий ") + wstr(TERMS_VERSION) +
+                       L" · текст прокручивается";
+    int r = ShowDialogWindow(owner, L"Подтверждение условий использования", sub,
+                             wstr(TERMS_TEXT),
+                             L"«Выход» или закрытие окна — программа завершит работу, "
+                             L"ничего не изменяя.",
+                             btns, 1);
+    return r == 1;
+}
+
+// Окно «Правовая информация»: остаётся открытым для повторного открытия документов.
+static void ShowLegalDialog(HWND owner) {
+    std::vector<std::wstring> btns;
+    btns.push_back(std::wstring(L"Открыть ") + wstr(LEGAL_FILE));
+    btns.push_back(std::wstring(L"Открыть ") + wstr(LICENSE_FILE));
+    btns.push_back(L"Закрыть");
+    std::wstring sub = std::wstring(L"Версия условий ") + wstr(TERMS_VERSION) +
+                       L" · лицензия GNU AGPL-3.0-or-later";
+    bool lp = !DocumentPathW(LEGAL_FILE).empty();
+    bool cp = !DocumentPathW(LICENSE_FILE).empty();
+    std::wstring note;
+    if (lp && cp) note = L"Файлы LEGAL.md и LICENSE найдены рядом с программой.";
+    else if (lp)  note = L"Рядом с программой есть LEGAL.md; LICENSE откроется в репозитории проекта.";
+    else if (cp)  note = L"Рядом с программой есть LICENSE; LEGAL.md откроется в репозитории проекта.";
+    else          note = L"Файлов LEGAL.md и LICENSE рядом с программой нет — кнопки откроют их "
+                         L"в репозитории проекта.";
+    for (;;) {
+        int r = ShowDialogWindow(owner, L"Правовая информация", sub, wstr(LEGAL_BRIEF),
+                                 note, btns, 2);
+        if (r == 0) { OpenDocument(owner, LEGAL_FILE); continue; }
+        if (r == 1) { OpenDocument(owner, LICENSE_FILE); continue; }
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Диагностика и описание движка
+// ---------------------------------------------------------------------------
+static std::string EngineDescription() {
+    if (g_engine.empty()) {
+        std::wstring ext = ScriptDir() + L"\\GITHUBCLOAD_core.exe";
+        if (FileExistsW(ext)) return "внешний GITHUBCLOAD_core.exe рядом с программой";
+        return "не определён (выберется при первой операции)";
+    }
+    if (g_engineIsEmbedded) return "встроенное в exe ядро (извлечено во временную папку)";
+    if (g_engine == L"py")  return "python + GITHUBCLOAD.py";
+    return "внешний GITHUBCLOAD_core.exe рядом с программой";
+}
+
+static std::string DiagnosticsText() {
+    bool tok = FileExistsW(ScriptDir() + L"\\" + wstr("tokengh.txt"));
+    bool pw = FileExistsW(ScriptDir() + L"\\" + wstr("PBEpass.txt"));
+    std::string acc;
+    bool accepted = TermsAccepted(&acc);
+    std::string accText = accepted ? "да" : "нет";
+    if (accepted && !acc.empty()) accText += " (" + acc + ")";
+    std::string s;
+    s += "Папка приложения: " + u8str(ScriptDir()) + "\n";
+    s += "Условия приняты: " + accText + " · версия условий " + TERMS_VERSION + "\n";
+    s += "Движок: " + EngineDescription() + "\n";
+    s += std::string("tokengh.txt: ") + (tok ? "найден" : "НЕ найден") +
+         " · PBEpass.txt: " + (pw ? "найден" : "НЕ найден") + "\n";
+    s += std::string("GUI ") + GUI_VERSION + " · Windows (Win32 + GDI+)";
+    return s;
+}
+
+// ---------------------------------------------------------------------------
+// Сведения о выбранном пути (вкладка «Загрузка»)
+// ---------------------------------------------------------------------------
+static void DirStats(const std::wstring& dir, int& count, unsigned long long& total) {
+    std::wstring pattern = dir + L"\\*";
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+        std::wstring child = dir + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            DirStats(child, count, total);
+        } else {
+            count++;
+            total += ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+struct PathInfoJob { std::wstring path; int seq; };
+
+static DWORD WINAPI PathInfoThread(LPVOID p) {
+    std::unique_ptr<PathInfoJob> job((PathInfoJob*)p);
+    std::string text;
+    DWORD attr = GetFileAttributesW(job->path.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        text = "путь не найден";
+    } else if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        WIN32_FILE_ATTRIBUTE_DATA d;
+        if (GetFileAttributesExW(job->path.c_str(), GetFileExInfoStandard, &d))
+            text = "файл · " + HumanBytes(((unsigned long long)d.nFileSizeHigh << 32) | d.nFileSizeLow);
+        else
+            text = "не удалось измерить размер";
+    } else {
+        int count = 0;
+        unsigned long long total = 0;
+        DirStats(job->path, count, total);
+        char b[96];
+        snprintf(b, sizeof b, "папка · файлов: %d · ", count);
+        text = std::string(b) + HumanBytes(total);
+    }
+    PostMessageW(g_hwnd, WM_APP_PATHINFO, (WPARAM)job->seq, (LPARAM)new std::string(text));
+    return 0;
+}
+
+static void KickPathInfo() {
+    if (!g_editPath) return;
+    wchar_t buf[2048];
+    GetWindowTextW(g_editPath, buf, 2048);
+    std::wstring p = buf;
+    if (p.empty()) {
+        g_pathInfo = "—";
+        g_pathInfoCol = TXT_MUTED;
+        Repaint();
+        return;
+    }
+    g_pathSeq++;
+    g_pathInfo = "измеряю размер…";
+    g_pathInfoCol = TXT_MUTED;
+    PathInfoJob* job = new PathInfoJob{ p, g_pathSeq };
+    CreateThread(nullptr, 0, PathInfoThread, job, 0, nullptr);
+    Repaint();
+}
+
+// ---------------------------------------------------------------------------
+// Группировка содержимого хранилища по томам (как _render_detail в Linux-GUI)
+// ---------------------------------------------------------------------------
+struct DetailRow { int kind; int item; std::string repo, used, total; };   // kind: 0 — том, 1 — элемент
+static std::vector<DetailRow> g_drows;
+static std::string g_detailSummary;
+
+static void RebuildStoreDetailRows() {
+    g_drows.clear();
+    g_detailSummary.clear();
+    if (g_open < 0) return;
+
+    int itemIdx = 0;
+    int volumeRows = 0;
+    unsigned long long usedSum = 0;
+    const std::string out = g_log;
+    size_t pos = 0;
+    while (pos < out.size()) {
+        size_t eol = out.find('\n', pos);
+        if (eol == std::string::npos) eol = out.size();
+        std::string line = TrimCR(out.substr(pos, eol - pos));
+        pos = eol + 1;
+        size_t b = line.find_first_not_of(" \t\r");
+        if (b == std::string::npos) continue;
+        std::string t = line.substr(b);
+
+        size_t vp = t.find("ТОМ ");
+        if (vp == 0) {
+            std::string rest = t.substr(t.find(' ') + 1);
+            std::string repo = rest, used, total;
+            size_t z = rest.find("занято ");
+            size_t iz = rest.find(" из ~", z == std::string::npos ? 0 : z);
+            if (z != std::string::npos && iz != std::string::npos) {
+                std::string u = rest.substr(z, iz - z);
+                size_t sp = u.find(' ');
+                used = (sp == std::string::npos) ? u : TrimSpaces(u.substr(sp + 1));
+                std::string tail = rest.substr(iz);
+                size_t tz = tail.find('~');
+                total = (tz == std::string::npos) ? "" : tail.substr(tz + 1);
+                size_t rp = total.find(')');
+                if (rp != std::string::npos) total = total.substr(0, rp);
+                total = TrimSpaces(total);
+            }
+            size_t par = rest.find('(');
+            repo = TrimSpaces(par == std::string::npos ? rest : rest.substr(0, par));
+            DetailRow r;
+            r.kind = 0; r.item = -1; r.repo = repo; r.used = used; r.total = total;
+            g_drows.push_back(r);
+            volumeRows++;
+            usedSum += ParseHuman(used);
+            continue;
+        }
+        if (t.compare(0, 2, "- ") == 0) {
+            std::string body = t.substr(2);
+            size_t m = body.find("  [id ");
+            if (m == std::string::npos) continue;
+            if (itemIdx < (int)g_items.size()) {
+                DetailRow r;
+                r.kind = 1; r.item = itemIdx;
+                r.repo = g_items[itemIdx].name;
+                g_drows.push_back(r);
+            }
+            itemIdx++;
+        }
+    }
+    if ((int)g_drows.size() == 0 || volumeRows == 0) {
+        // вывод не распознан — плоский список, как раньше
+        g_drows.clear();
+        for (size_t i = 0; i < g_items.size(); i++) {
+            DetailRow r;
+            r.kind = 1; r.item = (int)i;
+            g_drows.push_back(r);
+        }
+        g_detailSummary.clear();
+        return;
+    }
+    char b[160];
+    snprintf(b, sizeof b, "Томов: %d · элементов: %d · занято: %s",
+             volumeRows, (int)g_items.size(), HumanBytes(usedSum).c_str());
+    g_detailSummary = b;
+}
+
+static int DetailRowH(int i) { return g_drows[i].kind == 0 ? 38 : 56; }
+static int DetailGap() { return 12; }
+
+static int DetailTop(int i) {
+    int y = L.btnRefresh.bottom + 24 - g_listScroll;
+    for (int k = 0; k < i; k++) y += DetailRowH(k) + DetailGap();
+    return y;
+}
+
+static RECT DetailRect(int i) {
+    RECT r;
+    SetR(r, L.content.left, DetailTop(i), L.content.right - 6, DetailTop(i) + DetailRowH(i));
+    return r;
+}
+
+static int DetailTotalHeight() {
+    int h = 0;
+    for (size_t i = 0; i < g_drows.size(); i++) h += DetailRowH((int)i) + DetailGap();
+    return h;
+}
+
+static int DetailIndexAt(POINT p) {
+    for (size_t i = 0; i < g_drows.size(); i++) {
+        RECT r = DetailRect((int)i);
+        if (p.y >= r.top && p.y <= r.bottom) return (int)i;
+    }
+    return -1;
+}
+
+static void ItemPills(RECT row, RECT& dl, RECT& del) {
+    int pw = 92, gap = 8, right = row.right - 14;
+    SetR(del, right - pw, row.top + 12, right, row.bottom - 12);
+    SetR(dl, del.left - gap - pw, row.top + 12, del.left - gap, row.bottom - 12);
+}
+
+// ---------------------------------------------------------------------------
 // Действия
 // ---------------------------------------------------------------------------
 static void HandleAction(int id) {
@@ -1117,12 +2003,12 @@ static void HandleAction(int id) {
     }
     case ACT_BROWSE_FILE: {
         std::wstring p;
-        if (PickFile(p)) { SetWindowTextW(g_editPath, p.c_str()); }
+        if (PickFile(p)) { SetWindowTextW(g_editPath, p.c_str()); KickPathInfo(); }
         break;
     }
     case ACT_BROWSE_DIR: {
         std::wstring p;
-        if (PickFolder(p, L"Выберите папку для загрузки в облако")) { SetWindowTextW(g_editPath, p.c_str()); }
+        if (PickFolder(p, L"Выберите папку для загрузки в облако")) { SetWindowTextW(g_editPath, p.c_str()); KickPathInfo(); }
         break;
     }
     case ACT_UPLOAD: {
@@ -1140,6 +2026,38 @@ static void HandleAction(int id) {
     case ACT_STORE_DROP:
         g_storeDropOpen = !g_storeDropOpen;
         g_storeDropHover = -1;
+        Repaint();
+        break;
+    case ACT_DEL_SEL: {
+        if (g_open < 0 || g_open >= (int)g_stores.size()) break;
+        std::vector<std::wstring> ids;
+        for (size_t i = 0; i < g_items.size(); i++)
+            if (i < g_checked.size() && g_checked[i]) ids.push_back(wstr(g_items[i].id));
+        if (ids.empty()) break;
+        char cnt[32];
+        snprintf(cnt, sizeof cnt, "%d", (int)ids.size());
+        std::wstring q = L"Удалить " + wstr(cnt) + L" элем. из хранилища «" +
+                         wstr(g_stores[g_open]) + L"»?\nДействие необратимо.";
+        if (MessageBoxW(g_hwnd, q.c_str(), L"Удаление элементов",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) break;
+        g_delStore = wstr(g_stores[g_open]);
+        g_delQueue = ids;
+        std::wstring first = g_delQueue.front();
+        g_delQueue.erase(g_delQueue.begin());
+        RunCmd({ L"delete", g_delStore, first }, C_DELETE);
+        break;
+    }
+    case ACT_LOG_CLEAR:
+        g_logLines.clear();
+        SetStatus("Журнал очищен.", TXT_MUTED);
+        Repaint();
+        break;
+    case ACT_AUTO_SCROLL:
+        g_autoscroll = !g_autoscroll;
+        Repaint();
+        break;
+    case ACT_LEGAL:
+        ShowLegalDialog(g_hwnd);
         Repaint();
         break;
     }
@@ -1349,31 +2267,49 @@ static void DrawStoreRows(Graphics& g) {    bool inside = (g_open >= 0);
             g.ResetClip();
             return;
         }
-        int rowH = RowH(), gap = RowGap();
-        int maxScroll = (int)g_items.size() * (rowH + gap) - (clipR.bottom - clipR.top);
+        int maxScroll = DetailTotalHeight() - (clipR.bottom - clipR.top);
         if (maxScroll < 0) maxScroll = 0;
         if (g_listScroll > maxScroll) g_listScroll = maxScroll;
         if (g_listScroll < 0) g_listScroll = 0;
 
-        for (size_t i = 0; i < g_items.size(); i++) {
-            RECT r = RowRect((int)i);
-            bool on = g_checked[i] != 0;
+        if (!g_detailSummary.empty()) {
+            RECT sr = { clipR.left, clipR.top + 2, clipR.right, clipR.top + 22 };
+            DrawTextC(g, g_detailSummary, sr, 12.5f, TXT_MUTED, false, 0, 0);
+        }
+        for (size_t i = 0; i < g_drows.size(); i++) {
+            RECT r = DetailRect((int)i);
+            if (g_drows[i].kind == 0) {
+                // заголовок тома
+                DrawNeumorphCore(g, r, 10.0f, N_INSET, INNER, 7.0f, false);
+                RECT th = { r.left + 14, r.top, r.right - 14, r.bottom };
+                std::string label = "ТОМ " + g_drows[i].repo;
+                if (!g_drows[i].used.empty())
+                    label += "   (занято " + g_drows[i].used + " из ~" + g_drows[i].total + ")";
+                DrawTextCOne(g, label, th, 12.5f, ACCENT, true, 0, 1);
+                continue;
+            }
+            int idx = g_drows[i].item;
+            if (idx < 0 || idx >= (int)g_items.size()) continue;
+            bool on = (idx < (int)g_checked.size()) && g_checked[idx] != 0;
             bool hover = PtIn(r, g_mouse.x, g_mouse.y);
             NState st = on ? N_INSET : (hover ? N_HOVER : N_RAISED);
             DrawNeumorphCore(g, r, 16.0f, st, on ? INNER : BG, 12.0f, true);
             // чекбокс
             RECT chk = { r.left + 14, r.top + 14, r.left + 38, r.top + 38 };
             DrawCheckBox(g, chk, on);
+            RECT dl, del;
+            ItemPills(r, dl, del);
             // имя и id
-            RECT nm = { chk.right + 14, r.top + 6, r.right - 132, r.top + 30 };
-            DrawTextCOne(g, g_items[i].name, nm, 14.5f, TXT, true, 0, 1);
-            RECT sub = { nm.left, r.bottom - 20, r.right - 132, r.bottom - 8 };
-            DrawTextCOne(g, "id " + g_items[i].id + (g_items[i].sizeText.empty() ? "" : "   ·   " + g_items[i].sizeText),
+            RECT nm = { chk.right + 14, r.top + 6, dl.left - 14, r.top + 30 };
+            DrawTextCOne(g, g_items[idx].name, nm, 14.5f, TXT, true, 0, 1);
+            RECT sub = { nm.left, r.bottom - 20, dl.left - 14, r.bottom - 8 };
+            DrawTextCOne(g, "id " + g_items[idx].id + (g_items[idx].sizeText.empty() ? "" : "   ·   " + g_items[idx].sizeText),
                          sub, 11.0f, TXT_MUTED, false, 0, 1);
             // кнопка «Скачать» на строке
-            RECT pill = { r.right - 116, r.top + 12, r.right - 14, r.bottom - 12 };
-            bool pHover = PtIn(pill, g_mouse.x, g_mouse.y);
-            DrawPill(g, pill, "Скачать", pHover ? N_HOVER : N_RAISED);
+            bool dlH = PtIn(dl, g_mouse.x, g_mouse.y);
+            bool delH = PtIn(del, g_mouse.x, g_mouse.y);
+            DrawPill(g, dl, "Скачать", dlH ? N_HOVER : N_RAISED);
+            DrawPill(g, del, "Удалить", delH ? N_HOVER : N_RAISED);
         }
     } else {
         if (g_stores.empty()) {
@@ -1413,70 +2349,89 @@ static void DrawStoreRows(Graphics& g) {    bool inside = (g_open >= 0);
     g.ResetClip();
 }
 
+static NState BtnSt(BtnId id);
+
 static void DrawConsole(Graphics& g) {
     DrawNeumorphCore(g, L.console, 16.0f, N_INSET, LOG_BG, 9.0f, false);
-    RECT head = { L.console.left + 20, L.console.top + 12, L.console.right - 20, L.console.top + 38 };
-    std::string title = g_running ? "Консоль • выполняется…" : "Консоль — вывод GITHUBCLOAD";
+
+    // заголовок журнала
+    RECT head = { L.console.left + 20, L.console.top + 10,
+                  L.console.left + 340, L.console.top + 42 };
+    std::string title = g_running ? "Журнал • выполняется…" : "Журнал — вывод GITHUBCLOAD";
     DrawTextC(g, title, head, 13.0f, g_running ? ACCENT : TXT, true, 0, 1);
 
-    RECT inner = { L.console.left + 20, L.console.top + 44,
+    // статус операции — правее кнопок
+    RECT stR = { L.chkAuto.left - 340, L.console.top + 10, L.chkAuto.left - 14, L.console.top + 42 };
+    if (stR.left > head.right)
+        DrawTextC(g, g_statusText, stR, 12.0f, g_statusColor, false, 2, 1);
+
+    // «Автопрокрутка»
+    RECT cb = { L.chkAuto.left, L.chkAuto.top + 4, L.chkAuto.left + 18, L.chkAuto.top + 22 };
+    DrawCheckBox(g, cb, g_autoscroll);
+    RECT ct = { cb.right + 8, L.chkAuto.top, L.chkAuto.right, L.chkAuto.bottom };
+    DrawTextC(g, "Автопрокрутка", ct, 12.0f, TXT_MUTED, false, 0, 1);
+
+    // «Очистить»
+    DrawButton(g, L.btnClearLog, "Очистить", BtnSt(ACT_LOG_CLEAR), false, false);
+
+    RECT inner = { L.console.left + 20, L.console.top + 52,
                    L.console.right - 20, L.console.bottom - 16 };
     int cw = (int)RW(inner) - 10, ch = (int)RH(inner);
     if (cw < 10 || ch < 10) return;
-    if (g_log.empty()) {
+    if (g_logLines.empty()) {
         DrawTextC(g, g_running ? "Запускаем команду…" : "Здесь появится вывод команд.",
                   inner, 13.0f, TXT_MUTED, false, 0, 0);
         return;
     }
-    // перенос строк
-    Font f(g_bodyFont, 13.5f, FontStyleRegular, UnitPixel);
-    std::wstring all = Utf8ToWide(g_log);
-    std::vector<std::wstring> lines;
-    std::wstring cur;
+
+    Font f(g_bodyFont, 13.0f, FontStyleRegular, UnitPixel);
     auto measure = [&](const std::wstring& s) {
         RectF rr; g.MeasureString(s.c_str(), (INT)s.size(), &f, PointF(0, 0), &rr); return rr.Width;
     };
-    auto flush = [&]() {
-        if (cur.empty()) { lines.push_back(L""); return; }
-        std::wstring line = cur, out;
-        for (size_t i = 0; i < line.size(); i++) {
-            std::wstring cand = out + line[i];
-            if (measure(cand) > (REAL)cw && !out.empty()) {
-                lines.push_back(out); out = line[i];
-            } else out = cand;
+    std::vector<std::wstring> lines;
+    std::vector<COLORREF> cols;
+    for (size_t li = 0; li < g_logLines.size(); li++) {
+        std::wstring all = Utf8ToWide(g_logLines[li].text);
+        COLORREF col = TagColor(g_logLines[li].tag);
+        std::wstring acc;
+        for (size_t i = 0; i < all.size(); i++) {
+            std::wstring cand = acc + all[i];
+            if (measure(cand) > (REAL)cw && !acc.empty()) {
+                lines.push_back(acc);
+                cols.push_back(col);
+                acc.clear();
+            }
+            acc += all[i];
         }
-        lines.push_back(out);
-    };
-    for (wchar_t ch : all) {
-        if (ch == L'\n') { flush(); cur.clear(); }
-        else cur += ch;
+        lines.push_back(acc);
+        cols.push_back(col);
     }
-    flush();
 
     int lineH = 20;
     int total = (int)lines.size() * lineH;
     int maxScroll = total > ch ? total - ch : 0;
+    if (g_autoscroll) g_logScroll = maxScroll;
     if (g_logScroll > maxScroll) g_logScroll = maxScroll;
     if (g_logScroll < 0) g_logScroll = 0;
 
-    Gdiplus::Bitmap* cb = new Gdiplus::Bitmap(cw, (total > 0 ? total : 1), PixelFormat32bppARGB);
+    Gdiplus::Bitmap* cbmp = new Gdiplus::Bitmap(cw, (total > 0 ? total : 1), PixelFormat32bppARGB);
     {
-        Graphics gc(cb);
+        Graphics gc(cbmp);
         gc.Clear(Color(0, 0, 0, 0));
         gc.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
-        SolidBrush tb(C(TXT));
         for (int i = 0; i < (int)lines.size(); i++) {
             RECT nr = { 0, i * lineH, cw, i * lineH + lineH };
+            SolidBrush tb(C(cols[i]));
             DrawTextStr(gc, lines[i], nr, f, tb, 0, 0);
         }
     }
     RECT clip = Shift(inner, 0, -4);
     GraphicsPath cp; RoundPath(cp, clip, 10);
     g.SetClip(&cp);
-    g.DrawImage(cb, (REAL)inner.left, (REAL)inner.top - (REAL)g_logScroll,
+    g.DrawImage(cbmp, (REAL)inner.left, (REAL)inner.top - (REAL)g_logScroll,
                 (REAL)cw, (REAL)total);
     g.ResetClip();
-    delete cb;
+    delete cbmp;
 }
 
 static NState BtnSt(BtnId id);
@@ -1520,10 +2475,10 @@ static void DoPaint() {
 
         if (g_tab == 0) {
             // Верхний ряд кнопок зависит от уровня (хранилища / файлы внутри)
-            RECT btnRects[4] = { L.btnRefresh, L.btnDownload, L.btnDelete, L.btnWipe };
             const char* label0[4] = { "Обновить", "Скачать всё", "Удалить", "Стереть" };
-            std::string labelIn[4] = { "← Хранилища", "Скачать выбранные", "Скачать всё", "Обновить" };
-            for (int s = 0; s < 4; s++) {
+            const char* labelIn[5] = { "← Хранилища", "Скачать выбранные", "Скачать всё",
+                                       "Удалить выбранные", "Обновить" };
+            for (int s = 0; s < L.topCount; s++) {
                 BtnId id = TopBtnForSlot(s);
                 bool accent = (id == ACT_REFRESH);
                 std::string lab;
@@ -1533,7 +2488,7 @@ static void DoPaint() {
                 } else {
                     lab = label0[s];
                 }
-                DrawButton(g, btnRects[s], lab, BtnSt(id), accent, IsDisabled(id));
+                DrawButton(g, L.topBtn[s], lab, BtnSt(id), accent, IsDisabled(id));
             }
             DrawStoreRows(g);
         } else if (g_tab == 1) {
@@ -1542,17 +2497,28 @@ static void DoPaint() {
             DrawFieldBox(g, L.pathField);
             DrawButton(g, L.btnBrowseFile, "Выбрать файл", BtnSt(ACT_BROWSE_FILE), false, false);
             DrawButton(g, L.btnBrowseDir, "Выбрать папку", BtnSt(ACT_BROWSE_DIR), false, false);
+            DrawTextC(g, g_pathInfo, L.pathInfo, 12.5f, g_pathInfoCol, false, 0, 1);
 
             RECT lab2 = { L.storeField.left, L.storeField.top - 22, L.storeField.right - 60, L.storeField.top - 4 };
             DrawTextC(g, "Имя хранилища (репозиторий)", lab2, 12.5f, TXT_MUTED, true, 0, 0);
             DrawFieldBox(g, L.storeField);
             DrawButton(g, L.btnUpload, "Загрузить в облако", BtnSt(ACT_UPLOAD), true, IsDisabled((BtnId)ACT_UPLOAD));
             DrawStoreDrop(g);   // список поверх кнопки загрузки, как обычное меню
+            DrawTextC(g, UPLOAD_INFO, L.uploadInfo, 12.0f, TXT_MUTED, false, 0, 0);
         } else {
+            DrawNeumorphCore(g, L.selftestInfo, 14.0f, N_INSET, INNER, 7.0f, false);
+            RECT info = Shift(L.selftestInfo, 18, 10);
+            info.bottom -= 8;
+            DrawTextC(g, SELFTEST_INFO, info, 12.5f, TXT_MUTED, false, 0, 0);
+
             DrawButton(g, L.btnSelftest, "Запустить самопроверку", BtnSt(ACT_SELFTEST_RUN), true, IsDisabled((BtnId)ACT_SELFTEST_RUN));
-            DrawNeumorphCore(g, L.selftestHint, 14.0f, N_INSET, INNER, 7.0f, false);
-            RECT hint = Shift(L.selftestHint, 18, 8);
-            DrawTextC(g, "Создаёт тестовый архив, шифрует его (7z + AES-256), режет на части,\nрасшифровывает обратно и проверяет, что служебные файлы (tokengh.txt,\nPBEpass.txt) не попали внутрь. GitHub не требуется.", hint, 13.0f, TXT_MUTED, false, 0, 0);
+
+            DrawNeumorphCore(g, L.diagCard, 14.0f, N_INSET, INNER, 7.0f, false);
+            RECT dh = { L.diagCard.left + 18, L.diagCard.top + 14,
+                        L.diagCard.right - 240, L.diagCard.top + 44 };
+            DrawTextC(g, "Диагностика", dh, 13.5f, TXT, true, 0, 1);
+            DrawButton(g, L.btnLegal, "Правовая информация", BtnSt(ACT_LEGAL), false, IsDisabled((BtnId)ACT_LEGAL));
+            DrawTextC(g, DiagnosticsText(), L.diagText, 12.0f, TXT_MUTED, false, 0, 0);
         }
         DrawConsole(g);
     }
@@ -1687,22 +2653,33 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
         }
         if (g_tab == 0) {
             if (g_open >= 0) {
-                // уровень «внутри хранилища»: клик по строке = отметить файл
-                if (!g_items.empty()) {
-                    for (size_t i = 0; i < g_items.size(); i++) {
-                        RECT r = RowRect((int)i);
-                        if (PtIn(r, p.x, p.y)) {
-                            RECT pill = { r.right - 116, r.top + 11, r.right - 14, r.bottom - 11 };
-                            g_sel = (int)i;
-                            if (PtIn(pill, p.x, p.y)) {
-                                HandleAction(ACT_DL_ONE);   // скачать именно этот файл
-                            } else {
-                                g_checked[i] = g_checked[i] ? 0 : 1;
+                // уровень «внутри хранилища»: клик по строке элемента (тома — только заголовки)
+                int row = DetailIndexAt(p);
+                if (row >= 0 && row < (int)g_drows.size() && g_drows[row].kind == 1) {
+                    int idx = g_drows[row].item;
+                    if (idx >= 0 && idx < (int)g_items.size()) {
+                        RECT r = DetailRect(row);
+                        RECT dl, del;
+                        ItemPills(r, dl, del);
+                        if (PtIn(dl, p.x, p.y)) {
+                            g_sel = idx;
+                            HandleAction(ACT_DL_ONE);   // скачать именно этот файл
+                        } else if (PtIn(del, p.x, p.y)) {
+                            std::wstring q = L"Удалить элемент «" + wstr(g_items[idx].name) +
+                                             L"» (id " + wstr(g_items[idx].id) +
+                                             L") из хранилища «" + wstr(g_stores[g_open]) +
+                                             L"»?\nДействие необратимо.";
+                            if (MessageBoxW(hwnd, q.c_str(), L"Удаление элемента",
+                                            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES) {
+                                RunCmd({ L"delete", wstr(g_stores[g_open]), wstr(g_items[idx].id) },
+                                       C_DELETE);
                             }
-                            g_down = false; g_downId = 0;
-                            Repaint();
-                            return 0;
+                        } else {
+                            if (idx < (int)g_checked.size()) g_checked[idx] = g_checked[idx] ? 0 : 1;
                         }
+                        g_down = false; g_downId = 0;
+                        Repaint();
+                        return 0;
                     }
                 }
             } else if (!g_stores.empty()) {
@@ -1760,21 +2737,53 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
     }
     case WM_APP_DONE: {
         std::string* out = (std::string*)l;
-        g_log = *out; delete out;
+        g_log = *out;
         g_running = false;
-        if ((int)w == C_LIST) { ParseStores(g_log, g_stores); g_sel = -1; g_open = -1; g_items.clear(); g_checked.clear(); RefreshLayout(); }
-        else if ((int)w == C_LIST_ITEMS) {
+        LogAddBlock(g_log, "");
+        int op = (int)w;
+        if (op == C_LIST) {
+            ParseStores(g_log, g_stores);
+            g_sel = -1; g_open = -1;
+            g_items.clear(); g_checked.clear();
+            g_drows.clear(); g_detailSummary.clear();
+            RefreshLayout();
+        } else if (op == C_LIST_ITEMS) {
             ParseItems(g_log, g_items);
             g_checked.assign(g_items.size(), 0);
             g_sel = -1;
             g_listScroll = 0;
+            RebuildStoreDetailRows();
             RefreshLayout();
+        } else if (op == C_DELETE && !g_delQueue.empty()) {
+            std::wstring next = g_delQueue.front();
+            g_delQueue.erase(g_delQueue.begin());
+            if (!g_running) RunCmd({ L"delete", g_delStore, next }, C_DELETE);
+        } else if (op == C_DELETE) {
+            if (g_open >= 0) RunCmd({ L"list", wstr(g_stores[g_open]) }, C_LIST_ITEMS);
+        } else if (op == C_WIPE) {
+            g_open = -1;
+            g_items.clear(); g_checked.clear();
+            g_drows.clear(); g_detailSummary.clear();
+            RunCmd({ L"-" }, C_LIST);
         }
+        SetStatus(g_running ? "Выполняется…" : "Готово.", g_running ? ACCENT : TXT_MUTED);
+        delete out;
+        Repaint();
+        return 0;
+    }
+    case WM_APP_PATHINFO: {
+        std::string* t = (std::string*)l;
+        if ((int)w == g_pathSeq) {
+            g_pathInfo = *t;
+            g_pathInfoCol = (*t == "путь не найден") ? RGB(0xC0, 0x39, 0x2B) : TXT_MUTED;
+        }
+        delete t;
         Repaint();
         return 0;
     }
     case WM_APP_PH:
         UpdatePlaceholders();
+        if ((int)w == 1 && l == 1) KickPathInfo();
         return 0;
     case WM_DROPFILES: {
         HDROP hd = (HDROP)w;
@@ -1784,6 +2793,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
             g_storeDropOpen = false;
             if (g_editPath) SetWindowTextW(g_editPath, path);
             UpdatePlaceholders();
+            KickPathInfo();
             RefreshLayout();
             Repaint();
         }
@@ -1800,11 +2810,74 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT m, WPARAM w, LPARAM l) {
 // ---------------------------------------------------------------------------
 // Точка входа
 // ---------------------------------------------------------------------------
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
+static void PrintConsole(const std::string& text) {
+    std::wstring w = Utf8ToWide(text);
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD written = 0;
+        if (h && h != INVALID_HANDLE_VALUE) {
+            // В консоль — Unicode; если stdout перенаправлен (файл/пайп),
+            // WriteConsoleW невозможен — пишем UTF-8 байтами.
+            if (!WriteConsoleW(h, w.c_str(), (DWORD)w.size(), &written, nullptr))
+                WriteFile(h, text.data(), (DWORD)text.size(), &written, nullptr);
+        }
+        FreeConsole();
+    }
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     g_hInst = hInstance;
+
+    // --- служебные флаги командной строки ---
+    std::string rawArgs = lpCmdLine ? lpCmdLine : "";
+    std::vector<std::string> toks;
+    {
+        std::string cur;
+        for (size_t i = 0; i <= rawArgs.size(); i++) {
+            if (i == rawArgs.size() || rawArgs[i] == ' ' || rawArgs[i] == '\t' || rawArgs[i] == '"') {
+                if (!cur.empty()) { toks.push_back(cur); cur.clear(); }
+            } else cur += rawArgs[i];
+        }
+    }
+    bool fVersion = false, fHelp = false, fSmoke = false, fAccept = false, fUnknown = false;
+    for (size_t i = 0; i < toks.size(); i++) {
+        const std::string& t = toks[i];
+        if (t == "--version" || t == "-V") fVersion = true;
+        else if (t == "--help" || t == "-h") fHelp = true;
+        else if (t == "--smoke") fSmoke = true;
+        else if (t == "--accept-terms") fAccept = true;
+        else fUnknown = true;
+    }
+    if (fVersion) { PrintConsole(std::string(GUI_NAME) + " " + GUI_VERSION + "\n"); return 0; }
+    if (fHelp)    { PrintConsole(USAGE); return 0; }
+    if (fUnknown) { PrintConsole("Неизвестные аргументы командной строки.\n"); PrintConsole(USAGE); return 2; }
+
     GdiplusStartupInput gsi;
     GdiplusStartup(&g_gdip, &gsi, nullptr);
     InitFonts();
+
+    // Правовое предупреждение — одна строка (в консоль и в журнал, один раз за запуск).
+    PrintConsole(std::string(NOTICE_TEXT) + "\n");
+    LogAdd(NOTICE_TEXT, "gui");
+
+    std::string termsError;
+    if (fAccept) {
+        if (WriteTermsAcceptance(termsError))
+            PrintConsole(std::string("Условия использования приняты: записан ") + TERMS_FILE + "\n");
+        else
+            LogAdd("ВНИМАНИЕ: " + termsError, "warn");
+    }
+
+    // Подтверждение условий: диалог не показывается при --smoke / --accept-terms.
+    if (!fSmoke && !fAccept && !TermsAccepted()) {
+        if (!ShowTermsDialog(nullptr)) {
+            PrintConsole("Условия использования не приняты — работа прекращена, ничего не изменено.\n");
+            GdiplusShutdown(g_gdip);
+            return 3;
+        }
+        if (!WriteTermsAcceptance(termsError))
+            LogAdd("ВНИМАНИЕ: " + termsError + " — условия подтверждены только на этот запуск", "warn");
+    }
 
     WNDCLASSW wc{}; wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = WndProc;
@@ -1830,6 +2903,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     ShowWindow(g_hwnd, nCmdShow);
     UpdateWindow(g_hwnd);
     SetFocus(g_hwnd);   // не даём курсору мигать в поле ввода при запуске
+
+    if (fSmoke) {
+        // headless-проверка: строим все три страницы и закрываем окно без цикла сообщений
+        for (int t = 0; t <= 2; t++) {
+            g_tab = t;
+            RefreshLayout();
+            DoPaint();
+        }
+        DestroyWindow(g_hwnd);
+        GdiplusShutdown(g_gdip);
+        return 0;
+    }
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

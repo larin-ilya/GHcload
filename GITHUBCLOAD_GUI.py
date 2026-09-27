@@ -58,7 +58,7 @@ import traceback
 import webbrowser
 
 GUI_NAME = "GITHUBCLOAD_GUI"
-GUI_VERSION = "1.1.0"
+GUI_VERSION = "1.2.0"
 ENGINE_MODULE = "GITHUBCLOAD"
 ENGINE_SCRIPT = "GITHUBCLOAD.py"
 
