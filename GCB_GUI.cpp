@@ -472,6 +472,31 @@ static void DrawHeadC(Graphics& g, const std::string& s, RECT r, float size,
     DrawTextStr(g, wstr(s), r, f, br, 0, va);
 }
 
+// Подбирает размер шрифта так, чтобы подпись уложилась в ОДНУ строку.
+static float FitLabelSize(Graphics& g, const std::string& label, float maxW, float startSize) {
+    std::wstring w = wstr(label);
+    for (float s = startSize; s >= 11.0f; s -= 0.5f) {
+        Font f(g_bodyFont, s, FontStyleBold, UnitPixel);
+        RectF bb;
+        g.MeasureString(w.c_str(), -1, &f, PointF(0, 0), &bb);
+        if (bb.Width <= maxW) return s;
+    }
+    return 11.0f;
+}
+
+// Одна строка по центру, БЕЗ переноса (многоточие — только если совсем не влезает).
+static void DrawLabelOne(Graphics& g, const std::string& label, RECT r, float size,
+                         const Brush& br) {
+    Font f(g_bodyFont, size, FontStyleBold, UnitPixel);
+    StringFormat sf;
+    sf.SetAlignment(StringAlignmentCenter);
+    sf.SetLineAlignment(StringAlignmentCenter);
+    sf.SetTrimming(StringTrimmingEllipsisCharacter);
+    sf.SetFormatFlags(StringFormatFlagsNoWrap);
+    std::wstring w = wstr(label);
+    g.DrawString(w.c_str(), -1, &f, RectF((REAL)r.left, (REAL)r.top, RW(r), RH(r)), &sf, &br);
+}
+
 static void DrawButton(Graphics& g, RECT r, const std::string& label, NState st,
                        bool accent, bool disabled) {
     float rad = RH(r) / 2.0f;
@@ -495,13 +520,15 @@ static void DrawButton(Graphics& g, RECT r, const std::string& label, NState st,
                                PointF((REAL)hr.left, (REAL)(hr.top + RH(hr) * 0.6f)),
                                C(0xFFFFFF, 105), C(0xFFFFFF, 0));
         g.FillPath(&hg, &hp);
-        Font f(g_bodyFont, 15.5f, FontStyleBold, UnitPixel);
+        float fs = FitLabelSize(g, label, RW(rr) - 18.0f, 15.5f);
         SolidBrush tw(C(0xFFFFFF, 245)), sh2(C(0x000000, 45));
-        DrawTextStr(g, wstr(label), Shift(rr, 0, 1), f, sh2, 1, 1);
-        DrawTextStr(g, wstr(label), rr, f, tw, 1, 1);
+        DrawLabelOne(g, label, Shift(rr, 0, 1), fs, sh2);
+        DrawLabelOne(g, label, rr, fs, tw);
     } else {
         DrawNeumorphCore(g, r, rad, disabled ? N_RAISED : st, BG, 17.0f, true);
-        DrawTextC(g, label, r, 14.5f, disabled ? TXT_MUTED : TXT, true, 1, 1);
+        float fs = FitLabelSize(g, label, RW(r) - 18.0f, 14.5f);
+        SolidBrush tb(C(disabled ? TXT_MUTED : TXT));
+        DrawLabelOne(g, label, r, fs, tb);
     }
 }
 
@@ -1916,7 +1943,7 @@ static int DetailIndexAt(POINT p) {
 }
 
 static void ItemPills(RECT row, RECT& dl, RECT& del) {
-    int pw = 92, gap = 8, right = row.right - 14;
+    int pw = 88, gap = 8, right = row.right - 18;
     SetR(del, right - pw, row.top + 12, right, row.bottom - 12);
     SetR(dl, del.left - gap - pw, row.top + 12, del.left - gap, row.bottom - 12);
 }
@@ -2162,8 +2189,8 @@ static void DrawCheckBox(Graphics& g, RECT r, bool on) {
 // Компактная акцентная «таблетка» (per-row действие)
 static void DrawPill(Graphics& g, RECT r, const std::string& label, NState st) {
     float rad = RH(r) / 2.0f;
-    DrawShadow(g, r, rad, 12, C(SH_DARK, 200), 4, 4);
-    DrawShadow(g, r, rad, 12, C(SH_LIGHT, 190), -2, -2);
+    DrawShadow(g, r, rad, 8, C(SH_DARK, 150), 3, 3);
+    DrawShadow(g, r, rad, 8, C(SH_LIGHT, 150), -1, -1);
     COLORREF hi, lo;
     if (st == N_PRESSED)      { hi = RGB(0x2F, 0x64, 0xA8); lo = RGB(0x4A, 0x7E, 0xC9); }
     else if (st == N_HOVER)   { hi = RGB(0x6A, 0xA2, 0xE6); lo = RGB(0x3F, 0x77, 0xC4); }
@@ -2172,10 +2199,10 @@ static void DrawPill(Graphics& g, RECT r, const std::string& label, NState st) {
     LinearGradientBrush gr(PointF((REAL)r.left, (REAL)r.top),
                            PointF((REAL)r.left, (REAL)r.bottom), C(hi), C(lo));
     g.FillPath(&gr, &p);
-    Font f(g_bodyFont, 12.5f, FontStyleBold, UnitPixel);
+    float fs = FitLabelSize(g, label, RW(r) - 12.0f, 12.5f);
     SolidBrush tw(C(0xFFFFFF, 240)), sh2(C(0x000000, 45));
-    DrawTextStr(g, wstr(label), Shift(r, 0, 1), f, sh2, 1, 1);
-    DrawTextStr(g, wstr(label), r, f, tw, 1, 1);
+    DrawLabelOne(g, label, Shift(r, 0, 1), fs, sh2);
+    DrawLabelOne(g, label, r, fs, tw);
 }
 
 // Кнопка «▾» справа от поля хранилища + выпадающий список имён хранилищ
@@ -2437,7 +2464,7 @@ static void DrawConsole(Graphics& g) {
     int lineH = 20;
     int total = (int)lines.size() * lineH;
     int maxScroll = total > ch ? total - ch : 0;
-    if (g_autoscroll) g_logScroll = maxScroll;
+    if (g_autoscroll) g_logScroll = (maxScroll / lineH) * lineH;   // без «половинчатой» строки сверху
     if (g_logScroll > maxScroll) g_logScroll = maxScroll;
     if (g_logScroll < 0) g_logScroll = 0;
 
