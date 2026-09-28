@@ -72,7 +72,7 @@ except ImportError as exc:                      # aiogram ещё не устан
 # --------------------------------------------------------------------------
 # Версия и константы
 # --------------------------------------------------------------------------
-TG_VERSION = "1.0.0"
+TG_VERSION = "1.0.1"
 
 ENGINE_NAME = "GITHUBCLOAD.py"
 
@@ -814,8 +814,11 @@ async def on_file(message: Message, bot: Bot) -> None:
         )
         return
 
-    work = user_work_dir(uid)
-    dest = work / ("%d_%s" % (int(time.time()), name))
+    # Каждый приём — в отдельной папке: движок берёт имя элемента из имени
+    # файла на диске, поэтому сам файл кладём с ОРИГИНАЛЬНЫМ именем (без префиксов).
+    job_dir = user_work_dir(uid) / ("up_%d_%d" % (int(time.time() * 1000), uid))
+    job_dir.mkdir(parents=True, exist_ok=True)
+    dest = job_dir / name
     status = await message.answer(
         "⏳ Принял <b>%s</b> (%s).\nСкачиваю из Telegram…" % (esc(name), human_size(size) or "?"))
     try:
@@ -854,12 +857,13 @@ async def on_file(message: Message, bot: Bot) -> None:
     finally:
         stop.set()
         await asyncio.gather(tick, return_exceptions=True)
-        with contextlib.suppress(Exception):
-            dest.unlink()
+        shutil.rmtree(job_dir, ignore_errors=True)
 
     log.info("file: заливка uid=%s завершена кодом %s", uid, code)
     if code == 0:
         m_id = re.search(r"\[id (\S+)\]", out)
+        log.info("file: uid=%s элемент id=%s «%s» → «%s»",
+                 uid, m_id.group(1) if m_id else "?", name, store)
         extra = ""
         if m_id:
             extra = "\nID элемента: <code>%s</code>" % esc(m_id.group(1))
@@ -906,7 +910,9 @@ async def cb_download(cq: CallbackQuery, bot: Bot) -> None:
             await status.edit_text("🤷 Движок не создал файлов — возможно, элемент пуст.")
             return
         if len(files) > 1 or files[0].parent != out_dir:
-            zip_path = work / ("item_%s.zip" % item_id)
+            top = list(out_dir.iterdir())
+            base = top[0].name if len(top) == 1 else ("gcb_%s" % item_id)
+            zip_path = work / ("%s.zip" % base)
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
                 for p in files:
                     z.write(p, p.relative_to(out_dir))
