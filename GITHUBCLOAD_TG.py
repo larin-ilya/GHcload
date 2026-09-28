@@ -49,6 +49,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, Teleg
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.base import BaseStorage, StorageKey
 from aiogram.types import (
     BotCommand,
     BotCommandScopeDefault,
@@ -381,8 +382,54 @@ def confirm_kb(action: str) -> InlineKeyboardMarkup:
 # --------------------------------------------------------------------------
 # Бот
 # --------------------------------------------------------------------------
+class JsonFileStorage(BaseStorage):
+    """Простейшее файловое хранилище состояний FSM — переживает перезапуск бота."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._data: dict[str, dict] = {}
+        try:
+            self._data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            self._data = {}
+
+    def _flush(self) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._data, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self._path)
+        except Exception:
+            log.exception("fsm: не удалось сохранить состояния")
+
+    @staticmethod
+    def _k(key: StorageKey) -> str:
+        return "%s:%s:%s" % (key.bot_id, key.chat_id, key.user_id)
+
+    async def set_state(self, key: StorageKey, state=None) -> None:  # type: ignore[override]
+        rec = self._data.setdefault(self._k(key), {})
+        rec["state"] = state.state if hasattr(state, "state") else state
+        self._flush()
+
+    async def get_state(self, key: StorageKey):  # type: ignore[override]
+        rec = self._data.get(self._k(key)) or {}
+        return rec.get("state")
+
+    async def set_data(self, key: StorageKey, data: dict) -> None:  # type: ignore[override]
+        rec = self._data.setdefault(self._k(key), {})
+        rec["data"] = dict(data)
+        self._flush()
+
+    async def get_data(self, key: StorageKey) -> dict:  # type: ignore[override]
+        rec = self._data.get(self._k(key)) or {}
+        return dict(rec.get("data") or {})
+
+    async def close(self) -> None:  # type: ignore[override]
+        self._flush()
+
+
 router = Router()
-dp = Dispatcher()
+dp = Dispatcher(storage=JsonFileStorage(DATA_DIR / "fsm.json"))
 dp.include_router(router)
 
 # анти-флуд на пользователя: одна тяжёлая операция за раз
@@ -432,6 +479,7 @@ async def deny_if_needed(message: Message) -> bool:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     uid = message.from_user.id
+    log.info("reg: /start от uid=%s (зарегистрирован: %s)", uid, is_registered(uid))
     if not allowed(uid):
         await message.answer("⛔️ Доступ к этому боту ограничен.")
         return
@@ -453,6 +501,7 @@ async def reg_password(message: Message, state: FSMContext) -> None:
     uid = message.from_user.id
     password = (message.text or "").strip()
     await soft_delete(message)
+    log.info("reg: пароль получен от uid=%s (длина %d)", uid, len(password))
     if not password:
         await message.answer("Пароль пустой — пришлите ещё раз.")
         return
@@ -468,6 +517,7 @@ async def reg_token(message: Message, state: FSMContext) -> None:
     uid = message.from_user.id
     token = (message.text or "").strip()
     await soft_delete(message)
+    log.info("reg: токен получен от uid=%s (длина %d)", uid, len(token))
     if not re.match(r"^(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[A-Za-z0-9_]{30,})$", token):
         await message.answer(
             "Это не похоже на токен GitHub. Пришлите токен ещё раз "
@@ -478,12 +528,14 @@ async def reg_token(message: Message, state: FSMContext) -> None:
     password = data.get("password") or ""
     write_credentials(uid, token, password)
     ok, out = await run_engine(uid, ["list"], timeout=300)
+    log.info("reg: проверка токена uid=%s → код %s", uid, ok)
     if ok != 0:
         forget_user(uid)
         hint = ""
         if "401" in out or "Bad credentials" in out:
             hint = "\nТокен не принят GitHub (401)."
         await state.set_state(Reg.token)
+        log.warning("reg: токен не подтверждён uid=%s: %s", uid, out[:300].replace("\n", " | "))
         await message.answer(
             "❌ Не удалось подключиться к GitHub.%s\n\n%s\n\n"
             "Пришлите токен ещё раз или /cancel." % (hint, esc(out[:500]))
@@ -493,6 +545,7 @@ async def reg_token(message: Message, state: FSMContext) -> None:
     store = get_current_storage(uid)
     found = RE_FOUND.search(out)
     n = found.group(1) if found else "?"
+    log.info("reg: uid=%s зарегистрирован, хранилищ: %s", uid, n)
     await message.answer(
         "✅ <b>Готово!</b> Доступы сохранены, GitHub отвечает.\n"
         "Хранилищ в аккаунте: <b>%s</b>\n"
@@ -740,6 +793,8 @@ async def on_file(message: Message, bot: Bot) -> None:
     m = CAPTION_STORE_RE.search(caption)
     store = m.group(1) if m else get_current_storage(uid)
 
+    log.info("file: uid=%s «%s» %d Б → хранилище «%s»", uid, name, size, store)
+
     if size and size > TG_INGEST_LIMIT:
         await message.answer(
             "⚠️ Файл <b>%s</b> — %s.\n"
@@ -794,6 +849,7 @@ async def on_file(message: Message, bot: Bot) -> None:
         with contextlib.suppress(Exception):
             dest.unlink()
 
+    log.info("file: заливка uid=%s завершена кодом %s", uid, code)
     if code == 0:
         m_id = re.search(r"\[id (\S+)\]", out)
         extra = ""
@@ -820,6 +876,7 @@ async def cb_download(cq: CallbackQuery, bot: Bot) -> None:
         await cq.answer("Сначала /start", show_alert=True)
         return
     _, store, item_id = cq.data.split("|", 2)
+    log.info("dl: uid=%s запросил %s из «%s»", uid, item_id, store)
     if lock_for(uid).locked():
         await cq.answer("Дождитесь окончания текущей операции.", show_alert=True)
         return
@@ -850,6 +907,7 @@ async def cb_download(cq: CallbackQuery, bot: Bot) -> None:
             payload = files[0]
 
         size = payload.stat().st_size
+        log.info("dl: uid=%s файл %s (%d Б)", uid, payload.name, size)
         if size > TG_SEND_LIMIT:
             await status.edit_text(
                 "⚠️ Файл <b>%s</b> — %s. Это больше <b>50 МБ</b>, Bot API не даёт "
@@ -909,6 +967,7 @@ async def cb_delete_yes(cq: CallbackQuery) -> None:
     await cq.answer("Удаляю…")
     async with lock_for(uid):
         code, out = await run_engine(uid, ["delete", store, item_id])
+    log.info("del: uid=%s %s/%s → код %s", uid, store, item_id, code)
     if code == 0:
         await cq.message.edit_text("✅ Удалено: <code>%s</code>" % esc(item_id))
         await render_store(cq.message, uid, store, 0, edit=False)
