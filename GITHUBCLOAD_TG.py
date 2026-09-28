@@ -41,26 +41,33 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.enums import ChatAction, ParseMode
-from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
-from aiogram.filters import Command, CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.base import BaseStorage, StorageKey
-from aiogram.types import (
-    BotCommand,
-    BotCommandScopeDefault,
-    CallbackQuery,
-    FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    Message,
-    ReplyKeyboardMarkup,
-)
+try:
+    from aiogram import Bot, Dispatcher, F, Router
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.client.session.aiohttp import AiohttpSession
+    from aiogram.enums import ChatAction, ParseMode
+    from aiogram.exceptions import (TelegramBadRequest, TelegramForbiddenError,
+                                    TelegramRetryAfter)
+    from aiogram.filters import Command, CommandStart
+    from aiogram.fsm.context import FSMContext
+    from aiogram.fsm.state import State, StatesGroup
+    from aiogram.fsm.storage.base import BaseStorage, StorageKey
+    from aiogram.types import (
+        BotCommand,
+        BotCommandScopeDefault,
+        CallbackQuery,
+        FSInputFile,
+        InlineKeyboardButton,
+        InlineKeyboardMarkup,
+        KeyboardButton,
+        Message,
+        ReplyKeyboardMarkup,
+    )
+except ImportError as exc:                      # aiogram ещё не установлен
+    print("ОШИБКА: не установлен aiogram (%s)." % exc)
+    print("Установите зависимости бота:")
+    print("  python3 -m pip install -r requirements-tg.txt")
+    raise SystemExit(2)
 
 # --------------------------------------------------------------------------
 # Версия и константы
