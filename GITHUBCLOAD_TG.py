@@ -219,7 +219,7 @@ RE_STORAGE_HEAD = re.compile(r"^ХРАНИЛИЩЕ «(.+?)»\s*\((\d+)\s+том"
 RE_STORAGE_ONE = re.compile(r"^Хранилище GITHUBCLOAD «(.+?)»:")
 RE_VOLUME = re.compile(r"^\s*ТОМ (\S+)\s+\(занято (.+?) из ~(.+?)\)\s*$")
 RE_ITEM = re.compile(r"^\s*- (.+?)\s\s+\[id (\S+)\]\s\s*(.*)$")
-RE_FOUND = re.compile(r"^Найдено хранилищ GITHUBCLOAD: (\d+)$")
+RE_FOUND = re.compile(r"^Найдено хранилищ GITHUBCLOAD: (\d+)$", re.MULTILINE)
 
 
 def parse_storages(text: str) -> dict[str, dict]:
@@ -545,7 +545,7 @@ async def reg_token(message: Message, state: FSMContext) -> None:
     await state.clear()
     store = get_current_storage(uid)
     found = RE_FOUND.search(out)
-    n = found.group(1) if found else "?"
+    n = found.group(1) if found else "нет данных"
     log.info("reg: uid=%s зарегистрирован, хранилищ: %s", uid, n)
     await message.answer(
         "✅ <b>Готово!</b> Доступы сохранены, GitHub отвечает.\n"
