@@ -1,0 +1,15 @@
+[Unit]
+Description=GITHUBCLOAD Telegram bot (private cloud on GitHub)
+Documentation=https://github.com/larin-ilya/GHcload
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/gcb-telegram
+ExecStart=%h/gcb-telegram/.venv/bin/python %h/gcb-telegram/GITHUBCLOAD_TG.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

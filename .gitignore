@@ -35,3 +35,7 @@ ghp*.txt
 *_token*.txt
 
 _gcb_terms.json
+
+# --- Телеграм-бот: токен бота и рабочие данные пользователей ---
+token.txt
+data/

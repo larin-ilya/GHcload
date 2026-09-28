@@ -5,6 +5,8 @@
 принимает один файл до ~8 МБ) и заливается в **приватные репозитории GitHub**
 с помощью вашего токена.
 
+Интерфейсы: CLI, графические интерфейсы для Windows и Linux, **телеграм-бот**.
+
 > ⚠️ **Перед использованием прочитайте [LEGAL.md](LEGAL.md)** — правовые предупреждения и
 > правила допустимого использования. Коротко: за содержимое ваших репозиториев, за сохранность
 > пароля и за соблюдение правил GitHub отвечаете вы; проект не связан с GitHub, Inc.;
@@ -32,6 +34,7 @@ GHcload/
 ├── GITHUBCLOAD.py            — движок: шифрование, нарезка, загрузка (чистый Python)
 ├── GITHUBCLOAD_GUI.py        — кроссплатформенный GUI на tkinter (Linux-first)
 ├── GCB_GUI.cpp               — исходник нативного Windows-GUI (Win32 + GDI+, неоморфизм)
+├── GITHUBCLOAD_TG.py         — телеграм-бот (aiogram 3): приём файлов, браузер облака
 ├── core_res.rc               — ресурсы Windows-GUI (вшивание движка, иконка)
 ├── app.ico                   — иконка приложения (Windows-сборка, 16…256 px)
 ├── app.png                   — та же иконка в PNG 256×256 (окно Linux-GUI, внутрь сборки)
@@ -42,6 +45,8 @@ GHcload/
 ├── build_linux_docker.sh     — воспроизводимая сборка Linux-версии в Docker
 ├── run_gui_linux.sh          — запуск Linux-GUI из исходников (создаёт venv)
 ├── requirements.txt          — зависимости движка (py7zr, PyGithub)
+├── requirements-tg.txt       — зависимости телеграм-бота (то же + aiogram)
+├── deploy/                   — пример unit-файла systemd для бота (gcb-telegram.service)
 ├── LICENSE                   — GNU AGPL-3.0-or-later
 ├── LEGAL.md                  — правовые предупреждения и допустимое использование
 ├── screenshots/              — скриншоты интерфейса (Windows и Linux)
@@ -338,6 +343,46 @@ build_gui.bat
 
 ```bat
 C:\PORTABLE\mingw32\bin\g++.exe GCB_GUI.cpp -o GITHUBCLOAD_GUI.exe -mwindows -O2 -std=c++17 -static -finput-charset=UTF-8 -fwide-exec-charset=UTF-16LE -lgdiplus -lgdi32 -luser32 -lcomctl32 -lole32 -luuid -lshlwapi -lshell32 -ladvapi32
+```
+
+---
+
+---
+
+## Телеграм-версия (бот)
+
+`GITHUBCLOAD_TG.py` — бот на [aiogram 3](https://docs.aiogram.dev/): та же логика, что и у
+GUI (7z + AES-256, части по 8 МБ, приватные репозитории-тома).
+
+* **Первый запуск** — `/start`: бот спросит пароль шифрования и токен GitHub, сохранит их
+  локально (`data/users/<id>/`, права 600) и запомнит пользователя.
+* **Загрузка** — просто отправьте боту файл (документ, фото, видео, аудио, голосовое):
+  бот зашифрует и зальёт его в облако. По умолчанию — в хранилище `telegram`;
+  другое хранилище: `/storage имя` или метка `#имя` в подписи к файлу.
+* **Браузер облака** — `/storages`: список хранилищ кнопками → файлы → скачать или удалить.
+* **Скачивание** — кнопка «⬇️» у файла; отправляются файлы до **50 МБ** (ограничение Bot API).
+* **Приём файлов** — до **20 МБ**: Bot API не даёт боту скачать из Telegram больше
+  (ограничение `getFile`).
+* `/selftest` — самопроверка движка без GitHub; `/status`, `/logout`, `/help`.
+
+Ограничение доступа (необязательно): переменная окружения `GCB_TG_ALLOWED` — список
+Telegram-id через запятую; если задана, бот обслуживает только их.
+
+### Запуск бота
+
+```bash
+python3 -m pip install -r requirements-tg.txt       # py7zr, PyGithub, aiogram
+python3 GITHUBCLOAD_TG.py --token <ТОКЕН_БОТА>      # или env GCB_TG_TOKEN / token.txt рядом
+```
+
+Движок `GITHUBCLOAD.py` должен лежать рядом со скриптом бота. Токен бота берётся
+у [@BotFather](https://t.me/BotFather); файл `token.txt` в git не попадает.
+
+Автозапуск (systemd, пример): `deploy/gcb-telegram.service` — скопируйте в
+`~/.config/systemd/user/`, поправьте путь и включите:
+
+```bash
+systemctl --user enable --now gcb-telegram
 ```
 
 ---
