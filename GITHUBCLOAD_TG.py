@@ -518,10 +518,11 @@ async def reg_token(message: Message, state: FSMContext) -> None:
     token = (message.text or "").strip()
     await soft_delete(message)
     log.info("reg: токен получен от uid=%s (длина %d)", uid, len(token))
-    if not re.match(r"^(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[A-Za-z0-9_]{30,})$", token):
+    if not re.match(r"^(gh[a-z]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|[A-Za-z0-9_]{30,})$", token):
         await message.answer(
             "Это не похоже на токен GitHub. Пришлите токен ещё раз "
-            "(например, <code>ghp_…</code>) или /cancel."
+            "(<code>ghp_…</code>, <code>github_pat_…</code> или другой токен из "
+            "Settings → Developer settings) или /cancel."
         )
         return
     data = await state.get_data()
