@@ -861,7 +861,8 @@ async def on_file(message: Message, bot: Bot) -> None:
 
     log.info("file: заливка uid=%s завершена кодом %s", uid, code)
     if code == 0:
-        m_id = re.search(r"\[id (\S+)\]", out)
+        m_id = (re.search(r"id элемента:\s*(\S+)", out)
+                or re.search(r"\[id (\S+)\]", out))
         log.info("file: uid=%s элемент id=%s «%s» → «%s»",
                  uid, m_id.group(1) if m_id else "?", name, store)
         extra = ""
