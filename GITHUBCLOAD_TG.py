@@ -72,7 +72,7 @@ except ImportError as exc:                      # aiogram ещё не устан
 # --------------------------------------------------------------------------
 # Версия и константы
 # --------------------------------------------------------------------------
-TG_VERSION = "1.0.2"
+TG_VERSION = "1.0.3"
 
 ENGINE_NAME = "GITHUBCLOAD.py"
 
@@ -913,7 +913,7 @@ async def cb_download(cq: CallbackQuery, bot: Bot) -> None:
         if len(files) > 1 or files[0].parent != out_dir:
             top = list(out_dir.iterdir())
             base = top[0].name if len(top) == 1 else ("gcb_%s" % item_id)
-            zip_path = work / ("%s.zip" % base)
+            zip_path = out_dir / ("%s.zip" % base)   # внутри out_dir — уберётся вместе с ним
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
                 for p in files:
                     z.write(p, p.relative_to(out_dir))
@@ -1035,6 +1035,36 @@ async def on_error(event) -> bool:
 
 
 # ------------------------------------------------------------- запуск
+def housekeeping() -> None:
+    """Убирает временные файлы прерванных операций (старше часа)."""
+    deadline = time.time() - 3600
+
+    def sweep(base: Path, prefixes: tuple) -> None:
+        try:
+            entries = list(base.iterdir())
+        except OSError:
+            return
+        for p in entries:
+            if not any(p.name.startswith(x) for x in prefixes):
+                continue
+            try:
+                if p.stat().st_mtime > deadline:
+                    continue
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink()
+            except OSError:
+                pass
+
+    try:
+        for wd in USERS_DIR.glob("*/work"):
+            sweep(wd, ("up_", "dl_", "gcb_"))
+    except OSError:
+        pass
+    sweep(Path(tempfile.gettempdir()), ("gcb_up_", "gcb_dl_", "gcb_selftest_"))
+
+
 async def set_commands(bot: Bot) -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Начало и регистрация"),
@@ -1094,6 +1124,7 @@ async def main() -> int:
         handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler()],
     )
     log.info("GITHUBCLOAD_TG %s запускается; данные в %s", TG_VERSION, DATA_DIR)
+    housekeeping()
 
     session = AiohttpSession(timeout=300)
     bot = Bot(token=token, session=session,
