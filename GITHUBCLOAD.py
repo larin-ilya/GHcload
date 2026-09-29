@@ -45,6 +45,38 @@ from datetime import datetime, timezone
 import warnings
 warnings.filterwarnings("ignore", message=r"Python 3\.8 is no longer supported.*")
 
+
+# --------------------------------------------------------------------------
+# Обход особенности py7zr на малопитательных машинах.
+#
+# Размер чанка распаковки py7zr вычисляет от RLIMIT_DATA (или от доступной
+# памяти) и на слабом хосте получает крошечный блок. С таким блоком распаковка
+# иногда портит данные — py7zr.exceptions.CrcError, хотя сам архив корректен.
+# Разрешаем процессу больше данных: тогда py7zr берёт свой максимум (128 МБ)
+# и распаковка стабильна. Только Linux; любые ошибки игнорируются.
+# --------------------------------------------------------------------------
+def fix_py7zr_chunk_limit():
+    """Разрешает py7zr полный чанк распаковки (128 МБ) даже на слабых машинах."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_DATA)
+        want = 8 << 30                                  # 8 ГиБ
+        if soft != resource.RLIM_INFINITY and soft >= want:
+            return
+        new_soft = want if hard == resource.RLIM_INFINITY else min(want, hard)
+        if new_soft < (768 << 20):                      # ниже ~768 МБ смысла нет
+            return
+        if soft == new_soft:
+            return
+        resource.setrlimit(resource.RLIMIT_DATA, (new_soft, hard))
+    except Exception:
+        pass
+
+
+fix_py7zr_chunk_limit()
+
 # --------------------------------------------------------------------------
 # Константы
 # --------------------------------------------------------------------------
